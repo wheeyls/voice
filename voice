@@ -293,14 +293,14 @@ parse_args() {
           shift 2
         else
           echo "Error: --tone requires an argument" >&2
-          echo "Available tones: business_casual, formal, email, slack, direct_message, social_media, article" >&2
+          echo "Available tones: business_casual, formal, email, slack, direct_message, social_media, article, or any custom instruction" >&2
           exit 1
         fi
         ;;
       *)
         echo "Unknown option: $1" >&2
         echo "Usage: voice [--tone <tone_type>]" >&2
-        echo "Available tones: business_casual, formal, email, slack, direct_message, social_media, article" >&2
+        echo "Available tones: business_casual, formal, email, slack, direct_message, social_media, article, or any custom instruction" >&2
         exit 1
         ;;
     esac
