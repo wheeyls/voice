@@ -225,16 +225,30 @@ EOF
   # Check if the API call was successful
   if [[ $? -ne 0 ]]; then
     echo "Error: Failed to call OpenAI API" >&2
+    echo "Check log file for details: $log_file" >&2
+    return 1
+  fi
+  
+  # Log the full response for debugging
+  echo "Full API Response:" >> "$log_file"
+  echo "$response" >> "$log_file"
+  
+  # Check if the response contains an error
+  if echo "$response" | grep -q "error"; then
+    echo "Error from OpenAI API:" >&2
+    echo "$response" | jq -r '.error.message // "Unknown error"' >&2
     return 1
   fi
   
   # Extract the content from the response
-  local formatted_content=$(echo "$response" | jq -r '.choices[0].message.content' 2> "$log_file")
+  local formatted_content=$(echo "$response" | jq -r '.choices[0].message.content' 2>> "$log_file")
+  local jq_status=$?
   
   # Check if jq extraction was successful
-  if [[ $? -ne 0 || -z "$formatted_content" ]]; then
+  if [[ $jq_status -ne 0 || -z "$formatted_content" ]]; then
     echo "Error: Failed to parse OpenAI API response" >&2
-    echo "Response: $response" >> "$log_file"
+    echo "Response structure may be unexpected" >&2
+    echo "Full response saved to: $log_file" >&2
     return 1
   fi
   
@@ -327,7 +341,8 @@ main() {
     if [[ -n "$tone" ]]; then
       local formatted_content=$(apply_tone "$content" "$tone")
       
-      if [[ $? -eq 0 && -n "$formatted_content" ]]; then
+      local tone_status=$?
+      if [[ $tone_status -eq 0 && -n "$formatted_content" ]]; then
         # Save the formatted content to a new file
         local formatted_file="$HOME/voicememos/memo_${timestamp}_${tone}.txt"
         printf "%s" "$formatted_content" > "$formatted_file"
@@ -348,7 +363,8 @@ main() {
         # Copy the formatted content to clipboard
         copy_to_clipboard "$formatted_content"
       else
-        echo "Warning: Tone formatting failed, using original transcription" >&2
+        echo "Warning: Tone formatting failed (status: $tone_status), using original transcription" >&2
+        echo "Check logs in $HOME/voicememos/logs/ for details" >&2
         
         echo "Transcription:"
         echo "-------------------------------"
@@ -364,7 +380,7 @@ main() {
     fi
 
     # Copy to clipboard only if we haven't already done so
-    if [[ -z "$tone" || ($? -ne 0 || -z "$formatted_content") ]]; then
+    if [[ -z "$tone" || ($tone_status -ne 0 || -z "$formatted_content") ]]; then
       copy_to_clipboard "$final_content"
     fi
 
