@@ -96,6 +96,8 @@ transcribe_audio() {
   
   # Extract just the transcribed text, removing timestamps and other info
   # Look for lines that match the timestamp pattern [00:00.000 --> 00:00.000] and extract the text
+  echo "Full whisper output:"
+  echo "$whisper_output"
   local transcription=$(echo "$whisper_output" | grep -E '^\[.*-->.*\]' | sed -E 's/\[.*-->.*\](.*)/\1/g' | tr -d '\n')
   
   # Trim leading/trailing whitespace
