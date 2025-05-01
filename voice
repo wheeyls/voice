@@ -39,12 +39,12 @@ check_dependencies() {
   if ! command -v pbcopy &> /dev/null; then
     missing_deps+=("pbcopy (for clipboard operations)")
   fi
-  
+
   # Check for curl (for OpenAI API calls)
   if ! command -v curl &> /dev/null; then
     missing_deps+=("curl (for API calls)")
   fi
-  
+
   # Check for jq (for JSON parsing)
   if ! command -v jq &> /dev/null; then
     missing_deps+=("jq (for JSON parsing)")
@@ -70,7 +70,7 @@ ensure_voicememos_dir() {
   local voicememos_dir="$HOME/voicememos"
   local tmp_dir="$voicememos_dir/tmp"
   local logs_dir="$voicememos_dir/logs"
-  
+
   if [[ ! -d "$voicememos_dir" ]]; then
     echo "Creating voicememos directory at $voicememos_dir"
     mkdir -p "$voicememos_dir" || {
@@ -78,7 +78,7 @@ ensure_voicememos_dir() {
       exit 1
     }
   fi
-  
+
   if [[ ! -d "$tmp_dir" ]]; then
     echo "Creating temporary directory at $tmp_dir"
     mkdir -p "$tmp_dir" || {
@@ -86,7 +86,7 @@ ensure_voicememos_dir() {
       exit 1
     }
   fi
-  
+
   if [[ ! -d "$logs_dir" ]]; then
     echo "Creating logs directory at $logs_dir"
     mkdir -p "$logs_dir" || {
@@ -101,7 +101,7 @@ record_audio() {
   local audio_file="$1"
 
   local log_file="$HOME/voicememos/logs/voice.log"
-  
+
   echo "Recording... Press Enter to stop."
   echo "$(date): Starting audio recording for $audio_file" >> "$log_file"
   rec -r 48000 -c 1 "$audio_file" trim 0 silence 1 0.1 1% >> "$log_file" 2>&1 &
@@ -125,10 +125,10 @@ transcribe_audio() {
   echo "Transcribing audio with Whisper..."
   # Use the common log file
   local log_file="$HOME/voicememos/logs/voice.log"
-  
+
   # Log the start of transcription
   echo "$(date): Starting transcription for $audio_file" >> "$log_file"
-  
+
   # Capture whisper's output directly - use --output_dir and --output_format to control files
   local whisper_output=$(whisper "$audio_file" --model base --output_dir "$HOME/voicememos/tmp" --output_format txt 2>> "$log_file")
   local whisper_status=$?
@@ -142,10 +142,10 @@ transcribe_audio() {
   # Log the full whisper output for debugging
   echo "$(date): Full Whisper Output:" >> "$log_file"
   echo "$whisper_output" >> "$log_file"
-  
+
   # Extract just the transcribed text, removing timestamps and other info
   # Look for lines that match the timestamp pattern [00:00.000 --> 00:00.000] and extract the text
-  
+
   # Process each line with timestamps and combine them with proper spacing
   local transcription=$(echo "$whisper_output" | grep -E '^\[.*-->.*\]' | sed -E 's/\[.*-->.*\](.*)/\1/g' | awk '{$1=$1};1' | paste -sd " " - | tr -d '\n')
 
@@ -168,22 +168,22 @@ apply_tone() {
   local content="$1"
   local tone="$2"
   local log_file="$HOME/voicememos/logs/voice.log"
-  
+
   # Log the start of tone application
   echo "$(date): Starting tone application ($tone) for content" >> "$log_file"
-  
+
   # Check if OPENAI_API_KEY is set
   if [[ -z "$OPENAI_API_KEY" ]]; then
     echo "Error: OPENAI_API_KEY environment variable is not set" >&2
     echo "Please set it with: export OPENAI_API_KEY='your-api-key'" >&2
     return 1
   fi
-  
+
   # Define the core prompt - check for custom prompt in ~/.voice-default-prompt
   local default_core_prompt="You are a dictation assistant. You will be used to take dictation for voice messages, emails, articles and announcements, as well as technical specifications and note keeping."
   local custom_prompt_file="$HOME/.voice-default-prompt"
   local core_prompt
-  
+
   if [[ -f "$custom_prompt_file" ]]; then
     core_prompt=$(cat "$custom_prompt_file")
     if [[ -z "$core_prompt" ]]; then
@@ -193,7 +193,7 @@ apply_tone() {
   else
     core_prompt="$default_core_prompt"
   fi
-  
+
   # Create the system prompt based on the tone
   local system_prompt
   case "$tone" in
@@ -223,7 +223,7 @@ apply_tone() {
       system_prompt="$core_prompt You are reformatting text according to this instruction: $tone. Keep the content intact but adapt it as specified."
       ;;
   esac
-  
+
   # Create the API request payload
   local payload=$(cat <<EOF
 {
@@ -242,32 +242,32 @@ apply_tone() {
 }
 EOF
 )
-  
+
   # Make the API request
   local response=$(curl -s -X POST "https://api.openai.com/v1/chat/completions" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $OPENAI_API_KEY" \
     -d "$payload" 2>> "$log_file")
-  
+
   # Check if the API call was successful
   if [[ $? -ne 0 ]]; then
     echo "Error: Failed to call OpenAI API" >&2
     echo "Check log file for details: $log_file" >&2
     return 1
   fi
-  
+
   # Log the full request and response for debugging
   echo "$(date): API Request Payload:" >> "$log_file"
   echo "$payload" >> "$log_file"
   echo "" >> "$log_file"
   echo "$(date): Full API Response:" >> "$log_file"
   echo "$response" >> "$log_file"
-  
+
   # Also log to stdout for immediate debugging
   echo "API Response (first 200 chars):" >&2
   echo "$response" | head -c 200 >&2
   echo "..." >&2
-  
+
   # Check if the response contains an error
   if echo "$response" | grep -q '"error"'; then
     echo "Error from OpenAI API:" >&2
@@ -276,7 +276,7 @@ EOF
     echo "$error_msg" >&2
     return 1
   fi
-  
+
   # Extract the content from the response
   # Use a more robust approach to handle escaped quotes in JSON
   local formatted_content
@@ -285,13 +285,13 @@ EOF
     formatted_content=$(echo "$response" | jq -r '.choices[0].message.content' 2>> "$log_file")
     local jq_status=$?
     echo "$(date): jq extraction status: $jq_status" >> "$log_file"
-    
+
     # If jq fails, try a fallback method using grep and sed
     if [[ $jq_status -ne 0 || -z "$formatted_content" ]]; then
       echo "$(date): jq extraction failed, trying fallback method" >> "$log_file"
       # Extract content between "content": " and the next ", accounting for escaped quotes
       formatted_content=$(echo "$response" | grep -o '"content": "[^"]*"' | sed 's/"content": "\(.*\)"/\1/')
-      
+
       # If that fails too, try another approach
       if [[ -z "$formatted_content" ]]; then
         echo "$(date): fallback method failed, trying another approach" >> "$log_file"
@@ -300,7 +300,7 @@ EOF
       fi
     fi
   fi
-  
+
   # Check if we successfully extracted content
   if [[ -z "$formatted_content" ]]; then
     echo "Error: Failed to parse OpenAI API response" >&2
@@ -308,7 +308,7 @@ EOF
     echo "Full response saved to: $log_file" >&2
     return 1
   fi
-  
+
   echo "$formatted_content"
 }
 
@@ -333,7 +333,7 @@ cleanup() {
 
   # Optional: Clean up old temp files (older than 1 day)
   find "$HOME/voicememos/tmp" -type f -mtime +1 -delete 2>/dev/null || true
-  
+
   # Rotate log file if it gets too large (over 10MB)
   if [[ -f "$HOME/voicememos/logs/voice.log" ]]; then
     local log_size=$(stat -f%z "$HOME/voicememos/logs/voice.log" 2>/dev/null || echo 0)
@@ -349,7 +349,7 @@ cleanup() {
 # Parse command line arguments
 parse_args() {
   local tone=""
-  
+
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --tone)
@@ -370,7 +370,7 @@ parse_args() {
         ;;
     esac
   done
-  
+
   echo "$tone"
 }
 
@@ -378,7 +378,7 @@ parse_args() {
 main() {
   # Parse command line arguments
   local tone=$(parse_args "$@")
-  
+
   # Check dependencies
   check_dependencies
 
@@ -403,36 +403,36 @@ main() {
     # Get the content
     local content=$(cat "$transcript_file")
     local final_content="$content"
-    
+
     # Apply tone transformation if requested
     if [[ -n "$tone" ]]; then
       local formatted_content=$(apply_tone "$content" "$tone")
-      
+
       local tone_status=$?
       if [[ $tone_status -eq 0 && -n "$formatted_content" ]]; then
         # Save the formatted content to a new file
         local formatted_file="$HOME/voicememos/memo_${timestamp}_${tone}.txt"
         printf "%s" "$formatted_content" > "$formatted_file"
         final_content="$formatted_content"
-        
+
         echo "Original Transcription:"
         echo "-------------------------------"
         echo "$content"
         echo "-------------------------------"
-        
+
         echo "Formatted with $tone tone:"
         echo "-------------------------------"
         echo "$formatted_content"
         echo "-------------------------------"
-        
+
         echo "Saved formatted memo to $formatted_file"
-        
+
         # Copy the formatted content to clipboard
         copy_to_clipboard "$formatted_content"
       else
         echo "Warning: Tone formatting failed (status: $tone_status), using original transcription" >&2
         echo "Check logs in $HOME/voicememos/logs/ for details" >&2
-        
+
         echo "Transcription:"
         echo "-------------------------------"
         echo "$content"
