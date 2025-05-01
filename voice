@@ -1,10 +1,15 @@
-#!/usr/bin/env zsh
+#!/usr/bin/env bash
 
-# voice - A simple script to record voice, transcribe it with Whisper, and save to a file
+# voice - A simple wrapper script to run the Ruby voice transcription tool
 # Usage: voice [--tone <tone_type>]
 #   --tone: Optional. Reformat the transcription with the specified tone.
 #           Available tones: business_casual, formal, email, slack, direct_message, social_media, article
-# Press Enter to stop recording
+
+# Get the directory where this script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Run the Ruby script with all arguments passed to this script
+ruby "$SCRIPT_DIR/voice.rb" "$@"
 
 # Check for dependencies
 check_dependencies() {
