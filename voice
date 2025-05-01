@@ -132,9 +132,13 @@ transcribe_audio() {
     exit 1
   fi
 
+  # Log the full whisper output for debugging
+  echo "Full Whisper Output:" >> "$whisper_log"
+  echo "$whisper_output" >> "$whisper_log"
+  
   # Extract just the transcribed text, removing timestamps and other info
   # Look for lines that match the timestamp pattern [00:00.000 --> 00:00.000] and extract the text
-
+  
   # Process each line with timestamps and combine them with proper spacing
   local transcription=$(echo "$whisper_output" | grep -E '^\[.*-->.*\]' | sed -E 's/\[.*-->.*\](.*)/\1/g' | awk '{$1=$1};1' | paste -sd " " - | tr -d '\n')
 
@@ -243,9 +247,17 @@ EOF
     return 1
   fi
   
-  # Log the full response for debugging
+  # Log the full request and response for debugging
+  echo "API Request Payload:" >> "$log_file"
+  echo "$payload" >> "$log_file"
+  echo "" >> "$log_file"
   echo "Full API Response:" >> "$log_file"
   echo "$response" >> "$log_file"
+  
+  # Also log to stdout for immediate debugging
+  echo "API Response (first 200 chars):" >&2
+  echo "$response" | head -c 200 >&2
+  echo "..." >&2
   
   # Check if the response contains an error
   if echo "$response" | grep -q "error"; then
