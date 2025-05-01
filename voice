@@ -65,7 +65,7 @@ record_audio() {
   local audio_file="$1"
   
   echo "Recording... Press Enter to stop."
-  rec -r 44100 -c 1 "$audio_file" trim 0 silence 1 0.1 1% &
+  rec -r 48000 -c 1 "$audio_file" trim 0 silence 1 0.1 1% &
   local rec_pid=$!
   
   # Wait for Enter key
@@ -86,11 +86,11 @@ transcribe_audio() {
   echo "Transcribing audio with Whisper..."
   # Capture whisper's output directly
   local whisper_output=$(whisper "$audio_file" --model base 2>&1)
-  local status=$?
+  local whisper_status=$?
   
   # Check if whisper ran successfully
-  if [[ $status -ne 0 ]]; then
-    echo "Error: Whisper command failed with status $status" >&2
+  if [[ $whisper_status -ne 0 ]]; then
+    echo "Error: Whisper command failed with status $whisper_status" >&2
     exit 1
   fi
   
