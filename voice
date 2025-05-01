@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 # voice - A simple wrapper script to run the Ruby voice transcription tool
+# This script will be replaced by the gem's executable when installed
 # Usage: voice [--tone <tone_type>]
 #   --tone: Optional. Reformat the transcription with the specified tone.
 #           Available tones: business_casual, formal, email, slack, direct_message, social_media, article
