@@ -6,19 +6,6 @@
 #           Available tones: business_casual, formal, email, slack, direct_message, social_media, article
 # Press Enter to stop recording
 
-# Create default prompt file if it doesn't exist
-create_default_prompt_file() {
-  local prompt_file="$HOME/.voice-default-prompt"
-  
-  if [[ ! -f "$prompt_file" ]]; then
-    echo "Creating default prompt file at $prompt_file"
-    cat > "$prompt_file" << EOF
-You are a dictation assistant for Mike Wheeler, a CTO of G2.com. Mike is a busy executive who is still an individual contributor, and actively coding on a daily basis. He is a web developer first, and a CTO second. He is a product engineer that focuses on highly integrated teams building early business solutions. You will be used to take dictation for voice messages, emails, articles and announcements, as well as technical specifications and note keeping.
-EOF
-    echo "Default prompt file created. You can edit it at $prompt_file"
-  fi
-}
-
 # Check for dependencies
 check_dependencies() {
   local missing_deps=()
@@ -344,9 +331,6 @@ main() {
 
   # Ensure voicememos directory exists
   ensure_voicememos_dir
-  
-  # Create default prompt file if it doesn't exist
-  create_default_prompt_file
 
   # Create temp file for audio in the voicememos/tmp directory
   local audio_file="$HOME/voicememos/tmp/audio_$(date +"%Y%m%d_%H%M%S").wav"
