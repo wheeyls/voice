@@ -48,13 +48,23 @@ check_dependencies() {
   fi
 }
 
-# Ensure the voicememos directory exists
+# Ensure the voicememos directory and tmp subdirectory exist
 ensure_voicememos_dir() {
   local voicememos_dir="$HOME/voicememos"
+  local tmp_dir="$voicememos_dir/tmp"
+  
   if [[ ! -d "$voicememos_dir" ]]; then
     echo "Creating voicememos directory at $voicememos_dir"
     mkdir -p "$voicememos_dir" || {
       echo "Error: Failed to create directory $voicememos_dir"
+      exit 1
+    }
+  fi
+  
+  if [[ ! -d "$tmp_dir" ]]; then
+    echo "Creating temporary directory at $tmp_dir"
+    mkdir -p "$tmp_dir" || {
+      echo "Error: Failed to create directory $tmp_dir"
       exit 1
     }
   fi
@@ -128,6 +138,9 @@ cleanup() {
   
   # Remove temporary files
   [[ -f "$audio_file" ]] && rm "$audio_file"
+  
+  # Optional: Clean up old temp files (older than 1 day)
+  find "$HOME/voicememos/tmp" -type f -mtime +1 -delete 2>/dev/null || true
 }
 
 # Main function
@@ -138,8 +151,8 @@ main() {
   # Ensure voicememos directory exists
   ensure_voicememos_dir
   
-  # Create temp file for audio
-  local audio_file=$(mktemp).wav
+  # Create temp file for audio in the voicememos/tmp directory
+  local audio_file="$HOME/voicememos/tmp/audio_$(date +"%Y%m%d_%H%M%S").wav"
   
   # Record audio
   record_audio "$audio_file"
