@@ -346,6 +346,10 @@ main() {
         echo "-------------------------------"
         
         echo "Saved formatted memo to $formatted_file"
+        
+        # Copy the formatted content to clipboard
+        copy_to_clipboard "$formatted_content"
+        echo "Formatted content copied to clipboard"
       else
         echo "Warning: Tone formatting failed, using original transcription" >&2
         
@@ -362,8 +366,10 @@ main() {
       echo "-------------------------------"
     fi
 
-    # Copy to clipboard
-    copy_to_clipboard "$final_content"
+    # Copy to clipboard only if we haven't already done so
+    if [[ -z "$tone" || ($? -ne 0 || -z "$formatted_content") ]]; then
+      copy_to_clipboard "$final_content"
+    fi
 
     echo "Saved voice memo to $transcript_file"
   else
