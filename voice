@@ -166,8 +166,6 @@ apply_tone() {
     return 1
   fi
   
-  echo "Applying $tone tone to the transcription..."
-  
   # Create the system prompt based on the tone
   local system_prompt
   case "$tone" in
@@ -349,7 +347,6 @@ main() {
         
         # Copy the formatted content to clipboard
         copy_to_clipboard "$formatted_content"
-        echo "Formatted content copied to clipboard"
       else
         echo "Warning: Tone formatting failed, using original transcription" >&2
         
