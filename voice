@@ -167,6 +167,7 @@ apply_tone() {
   fi
   
   # Create the system prompt based on the tone
+  core_prompt = "You are a dictation assistant for Mike Wheeler, a CTO of G2.com. Mike is a busy executive who is still an individual contributor, and actively coding on a daily basis. He is a web developer first, and a CTO second. He is a product engineer that focuses on highly integrated teams building early business solutions. You will be used to take dictation for voice messages, emails, articles and announcements, as well as technical specifications and note keeping."
   local system_prompt
   case "$tone" in
     business_casual)
