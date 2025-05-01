@@ -94,8 +94,8 @@ transcribe_audio() {
   local transcript_file="$2"
   
   echo "Transcribing audio with Whisper..."
-  # Capture whisper's output directly
-  local whisper_output=$(whisper "$audio_file" --model base 2>&1)
+  # Capture whisper's output directly - use --output_dir and --output_format to control files
+  local whisper_output=$(whisper "$audio_file" --model base --output_dir "$HOME/voicememos/tmp" --output_format txt 2>&1)
   local whisper_status=$?
   
   # Check if whisper ran successfully
@@ -140,6 +140,10 @@ cleanup() {
   
   # Remove temporary files
   [[ -f "$audio_file" ]] && rm "$audio_file"
+  
+  # Clean up whisper output files
+  local base_name=$(basename "$audio_file" .wav)
+  [[ -f "$HOME/voicememos/tmp/$base_name.txt" ]] && rm "$HOME/voicememos/tmp/$base_name.txt"
   
   # Optional: Clean up old temp files (older than 1 day)
   find "$HOME/voicememos/tmp" -type f -mtime +1 -delete 2>/dev/null || true
