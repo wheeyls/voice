@@ -13,6 +13,11 @@ check_dependencies() {
     missing_deps+=("sox (for audio recording)")
   fi
   
+  # Check for ffmpeg (required by whisper)
+  if ! command -v ffmpeg &> /dev/null; then
+    missing_deps+=("ffmpeg (required for audio processing)")
+  fi
+  
   # Check for whisper
   if ! command -v whisper &> /dev/null; then
     if [[ -x "$HOME/.asdf/installs/python/3.9.9/bin/whisper" ]]; then
@@ -37,6 +42,7 @@ check_dependencies() {
     echo ""
     echo "Please install the missing dependencies and try again."
     echo "For sox: brew install sox"
+    echo "For ffmpeg: brew install ffmpeg"
     echo "For whisper: pip install -U openai-whisper"
     exit 1
   fi
@@ -78,16 +84,31 @@ transcribe_audio() {
   local transcript_file="$2"
   
   echo "Transcribing audio with Whisper..."
-  whisper "$audio_file" --model base --output_dir "$(dirname "$transcript_file")" --output_format txt
+  # Capture whisper's output directly
+  local whisper_output=$(whisper "$audio_file" --model base 2>&1)
+  local status=$?
   
-  # Whisper adds .txt to the audio file name, so we need to find and move it
-  local whisper_output="${audio_file}.txt"
-  if [[ -f "$whisper_output" ]]; then
-    cat "$whisper_output" > "$transcript_file"
-    rm "$whisper_output"
-  else
-    echo "Error: Whisper transcription failed" >&2
+  # Check if whisper ran successfully
+  if [[ $status -ne 0 ]]; then
+    echo "Error: Whisper command failed with status $status" >&2
     exit 1
+  fi
+  
+  # Extract just the transcribed text, removing timestamps and other info
+  # Look for lines that match the timestamp pattern [00:00.000 --> 00:00.000] and extract the text
+  local transcription=$(echo "$whisper_output" | grep -E '^\[.*-->.*\]' | sed -E 's/\[.*-->.*\](.*)/\1/g' | tr -d '\n')
+  
+  # Trim leading/trailing whitespace
+  transcription=$(echo "$transcription" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  
+  if [[ -n "$transcription" ]]; then
+    # Write the extracted transcription to the output file
+    echo "$transcription" > "$transcript_file"
+  else
+    # If we couldn't extract any text, save the full output for debugging
+    echo "Warning: Could not extract transcription text" >&2
+    echo "$whisper_output" > "$transcript_file"
+    echo "Full whisper output saved to $transcript_file for debugging" >&2
   fi
 }
 
