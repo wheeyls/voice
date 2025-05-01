@@ -95,11 +95,11 @@ ensure_voicememos_dir() {
 record_audio() {
   local audio_file="$1"
 
-  local timestamp=$(date +"%Y%m%d_%H%M%S")
-  local log_file="$HOME/voicememos/logs/rec_${timestamp}.log"
+  local log_file="$HOME/voicememos/logs/voice.log"
   
   echo "Recording... Press Enter to stop."
-  rec -r 48000 -c 1 "$audio_file" trim 0 silence 1 0.1 1% > "$log_file" 2>&1 &
+  echo "$(date): Starting audio recording for $audio_file" >> "$log_file"
+  rec -r 48000 -c 1 "$audio_file" trim 0 silence 1 0.1 1% >> "$log_file" 2>&1 &
   local rec_pid=$!
 
   # Wait for Enter key
@@ -118,12 +118,14 @@ transcribe_audio() {
   local transcript_file="$2"
 
   echo "Transcribing audio with Whisper..."
-  # Get timestamp for log file
-  local timestamp=$(date +"%Y%m%d_%H%M%S")
-  local whisper_log="$HOME/voicememos/logs/whisper_${timestamp}.log"
+  # Use the common log file
+  local log_file="$HOME/voicememos/logs/voice.log"
+  
+  # Log the start of transcription
+  echo "$(date): Starting transcription for $audio_file" >> "$log_file"
   
   # Capture whisper's output directly - use --output_dir and --output_format to control files
-  local whisper_output=$(whisper "$audio_file" --model base --output_dir "$HOME/voicememos/tmp" --output_format txt 2> "$whisper_log")
+  local whisper_output=$(whisper "$audio_file" --model base --output_dir "$HOME/voicememos/tmp" --output_format txt 2>> "$log_file")
   local whisper_status=$?
 
   # Check if whisper ran successfully
@@ -133,8 +135,8 @@ transcribe_audio() {
   fi
 
   # Log the full whisper output for debugging
-  echo "Full Whisper Output:" >> "$whisper_log"
-  echo "$whisper_output" >> "$whisper_log"
+  echo "$(date): Full Whisper Output:" >> "$log_file"
+  echo "$whisper_output" >> "$log_file"
   
   # Extract just the transcribed text, removing timestamps and other info
   # Look for lines that match the timestamp pattern [00:00.000 --> 00:00.000] and extract the text
@@ -160,8 +162,10 @@ transcribe_audio() {
 apply_tone() {
   local content="$1"
   local tone="$2"
-  local timestamp=$(date +"%Y%m%d_%H%M%S")
-  local log_file="$HOME/voicememos/logs/openai_${timestamp}.log"
+  local log_file="$HOME/voicememos/logs/voice.log"
+  
+  # Log the start of tone application
+  echo "$(date): Starting tone application ($tone) for content" >> "$log_file"
   
   # Check if OPENAI_API_KEY is set
   if [[ -z "$OPENAI_API_KEY" ]]; then
@@ -238,7 +242,7 @@ EOF
   local response=$(curl -s -X POST "https://api.openai.com/v1/chat/completions" \
     -H "Content-Type: application/json" \
     -H "Authorization: Bearer $OPENAI_API_KEY" \
-    -d "$payload" 2> "$log_file")
+    -d "$payload" 2>> "$log_file")
   
   # Check if the API call was successful
   if [[ $? -ne 0 ]]; then
@@ -248,10 +252,10 @@ EOF
   fi
   
   # Log the full request and response for debugging
-  echo "API Request Payload:" >> "$log_file"
+  echo "$(date): API Request Payload:" >> "$log_file"
   echo "$payload" >> "$log_file"
   echo "" >> "$log_file"
-  echo "Full API Response:" >> "$log_file"
+  echo "$(date): Full API Response:" >> "$log_file"
   echo "$response" >> "$log_file"
   
   # Also log to stdout for immediate debugging
@@ -268,6 +272,7 @@ EOF
   
   # Extract the content from the response
   local formatted_content=$(echo "$response" | jq -r '.choices[0].message.content' 2>> "$log_file")
+  echo "$(date): jq extraction status: $?" >> "$log_file"
   local jq_status=$?
   
   # Check if jq extraction was successful
@@ -300,9 +305,19 @@ cleanup() {
   local base_name=$(basename "$audio_file" .wav)
   [[ -f "$HOME/voicememos/tmp/$base_name.txt" ]] && rm "$HOME/voicememos/tmp/$base_name.txt"
 
-  # Optional: Clean up old temp files and logs (older than 1 day)
+  # Optional: Clean up old temp files (older than 1 day)
   find "$HOME/voicememos/tmp" -type f -mtime +1 -delete 2>/dev/null || true
-  find "$HOME/voicememos/logs" -type f -mtime +1 -delete 2>/dev/null || true
+  
+  # Rotate log file if it gets too large (over 10MB)
+  if [[ -f "$HOME/voicememos/logs/voice.log" ]]; then
+    local log_size=$(stat -f%z "$HOME/voicememos/logs/voice.log" 2>/dev/null || echo 0)
+    if (( log_size > 10485760 )); then  # 10MB in bytes
+      local timestamp=$(date +"%Y%m%d_%H%M%S")
+      mv "$HOME/voicememos/logs/voice.log" "$HOME/voicememos/logs/voice_${timestamp}.log"
+      # Keep only the 5 most recent rotated logs
+      ls -t "$HOME/voicememos/logs"/voice_*.log | tail -n +6 | xargs rm -f 2>/dev/null || true
+    fi
+  fi
 }
 
 # Parse command line arguments
