@@ -48,11 +48,12 @@ check_dependencies() {
   fi
 }
 
-# Ensure the voicememos directory and tmp subdirectory exist
+# Ensure the voicememos directory and subdirectories exist
 ensure_voicememos_dir() {
   local voicememos_dir="$HOME/voicememos"
   local tmp_dir="$voicememos_dir/tmp"
-
+  local logs_dir="$voicememos_dir/logs"
+  
   if [[ ! -d "$voicememos_dir" ]]; then
     echo "Creating voicememos directory at $voicememos_dir"
     mkdir -p "$voicememos_dir" || {
@@ -60,11 +61,19 @@ ensure_voicememos_dir() {
       exit 1
     }
   fi
-
+  
   if [[ ! -d "$tmp_dir" ]]; then
     echo "Creating temporary directory at $tmp_dir"
     mkdir -p "$tmp_dir" || {
       echo "Error: Failed to create directory $tmp_dir"
+      exit 1
+    }
+  fi
+  
+  if [[ ! -d "$logs_dir" ]]; then
+    echo "Creating logs directory at $logs_dir"
+    mkdir -p "$logs_dir" || {
+      echo "Error: Failed to create directory $logs_dir"
       exit 1
     }
   fi
@@ -74,8 +83,11 @@ ensure_voicememos_dir() {
 record_audio() {
   local audio_file="$1"
 
+  local timestamp=$(date +"%Y%m%d_%H%M%S")
+  local log_file="$HOME/voicememos/logs/rec_${timestamp}.log"
+  
   echo "Recording... Press Enter to stop."
-  rec -r 48000 -c 1 "$audio_file" trim 0 silence 1 0.1 1% &
+  rec -r 48000 -c 1 "$audio_file" trim 0 silence 1 0.1 1% > "$log_file" 2>&1 &
   local rec_pid=$!
 
   # Wait for Enter key
@@ -94,8 +106,12 @@ transcribe_audio() {
   local transcript_file="$2"
 
   echo "Transcribing audio with Whisper..."
+  # Get timestamp for log file
+  local timestamp=$(date +"%Y%m%d_%H%M%S")
+  local whisper_log="$HOME/voicememos/logs/whisper_${timestamp}.log"
+  
   # Capture whisper's output directly - use --output_dir and --output_format to control files
-  local whisper_output=$(whisper "$audio_file" --model base --output_dir "$HOME/voicememos/tmp" --output_format txt 2>&1)
+  local whisper_output=$(whisper "$audio_file" --model base --output_dir "$HOME/voicememos/tmp" --output_format txt 2> "$whisper_log")
   local whisper_status=$?
 
   # Check if whisper ran successfully
@@ -143,8 +159,9 @@ cleanup() {
   local base_name=$(basename "$audio_file" .wav)
   [[ -f "$HOME/voicememos/tmp/$base_name.txt" ]] && rm "$HOME/voicememos/tmp/$base_name.txt"
 
-  # Optional: Clean up old temp files (older than 1 day)
+  # Optional: Clean up old temp files and logs (older than 1 day)
   find "$HOME/voicememos/tmp" -type f -mtime +1 -delete 2>/dev/null || true
+  find "$HOME/voicememos/logs" -type f -mtime +1 -delete 2>/dev/null || true
 }
 
 # Main function
