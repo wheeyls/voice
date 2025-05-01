@@ -166,35 +166,36 @@ apply_tone() {
     return 1
   fi
   
+  # Define the core prompt
+  local core_prompt="You are a dictation assistant for Mike Wheeler, a CTO of G2.com. Mike is a busy executive who is still an individual contributor, and actively coding on a daily basis. He is a web developer first, and a CTO second. He is a product engineer that focuses on highly integrated teams building early business solutions. You will be used to take dictation for voice messages, emails, articles and announcements, as well as technical specifications and note keeping."
+  
   # Create the system prompt based on the tone
-  core_prompt = "You are a dictation assistant for Mike Wheeler, a CTO of G2.com. Mike is a busy executive who is still an individual contributor, and actively coding on a daily basis. He is a web developer first, and a CTO second. He is a product engineer that focuses on highly integrated teams building early business solutions. You will be used to take dictation for voice messages, emails, articles and announcements, as well as technical specifications and note keeping."
   local system_prompt
   case "$tone" in
     business_casual)
-      system_prompt="You are a professional assistant that reformats text into a business casual tone. Keep the content intact but make it appropriate for professional settings while maintaining a conversational feel."
+      system_prompt="$core_prompt You are reformatting text into a business casual tone. Keep the content intact but make it appropriate for professional settings while maintaining a conversational feel."
       ;;
     formal)
-      system_prompt="You are a professional assistant that reformats text into a formal tone. Keep the content intact but make it appropriate for formal business or academic settings."
+      system_prompt="$core_prompt You are reformatting text into a formal tone. Keep the content intact but make it appropriate for formal business or academic settings."
       ;;
     email)
-      system_prompt="You are a professional assistant that reformats text into a proper email format. Keep the content intact but structure it as a professional email with greeting and signature."
+      system_prompt="$core_prompt You are reformatting text into a proper email format. Keep the content intact but structure it as a professional email with greeting and signature."
       ;;
     slack)
-      system_prompt="You are a professional assistant that reformats text into a Slack message style. Keep the content intact but make it concise and appropriate for team communication on Slack."
+      system_prompt="$core_prompt You are reformatting text into a Slack message style. Keep the content intact but make it concise and appropriate for team communication on Slack."
       ;;
     direct_message)
-      system_prompt="You are a professional assistant that reformats text into a direct message style. Keep the content intact but make it conversational and appropriate for one-on-one messaging."
+      system_prompt="$core_prompt You are reformatting text into a direct message style. Keep the content intact but make it conversational and appropriate for one-on-one messaging."
       ;;
     social_media)
-      system_prompt="You are a professional assistant that reformats text into a social media post style. Keep the content intact but make it engaging and appropriate for social media platforms."
+      system_prompt="$core_prompt You are reformatting text into a social media post style. Keep the content intact but make it engaging and appropriate for social media platforms."
       ;;
     article)
-      system_prompt="You are a professional assistant that reformats text into an article style. Keep the content intact but structure it with proper paragraphs, transitions, and a more formal writing style."
+      system_prompt="$core_prompt You are reformatting text into an article style. Keep the content intact but structure it with proper paragraphs, transitions, and a more formal writing style."
       ;;
     *)
-      echo "Unknown tone: $tone" >&2
-      echo "Available tones: business_casual, formal, email, slack, direct_message, social_media, article" >&2
-      return 1
+      # Default case - use the custom tone directly
+      system_prompt="$core_prompt You are reformatting text according to this instruction: $tone. Keep the content intact but adapt it as specified."
       ;;
   esac
   
