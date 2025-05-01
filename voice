@@ -264,19 +264,40 @@ EOF
   echo "..." >&2
   
   # Check if the response contains an error
-  if echo "$response" | grep -q "error"; then
+  if echo "$response" | grep -q '"error"'; then
     echo "Error from OpenAI API:" >&2
-    echo "$response" | jq -r '.error.message // "Unknown error"' >&2
+    # Try to extract error message with jq, but fall back to a simple message if that fails
+    local error_msg=$(echo "$response" | jq -r '.error.message // "Unknown error"' 2>/dev/null || echo "Unknown error (could not parse)")
+    echo "$error_msg" >&2
     return 1
   fi
   
   # Extract the content from the response
-  local formatted_content=$(echo "$response" | jq -r '.choices[0].message.content' 2>> "$log_file")
-  echo "$(date): jq extraction status: $?" >> "$log_file"
-  local jq_status=$?
+  # Use a more robust approach to handle escaped quotes in JSON
+  local formatted_content
+  if echo "$response" | grep -q '"choices"'; then
+    # Try to extract with jq, but handle errors gracefully
+    formatted_content=$(echo "$response" | jq -r '.choices[0].message.content' 2>> "$log_file")
+    local jq_status=$?
+    echo "$(date): jq extraction status: $jq_status" >> "$log_file"
+    
+    # If jq fails, try a fallback method using grep and sed
+    if [[ $jq_status -ne 0 || -z "$formatted_content" ]]; then
+      echo "$(date): jq extraction failed, trying fallback method" >> "$log_file"
+      # Extract content between "content": " and the next ", accounting for escaped quotes
+      formatted_content=$(echo "$response" | grep -o '"content": "[^"]*"' | sed 's/"content": "\(.*\)"/\1/')
+      
+      # If that fails too, try another approach
+      if [[ -z "$formatted_content" ]]; then
+        echo "$(date): fallback method failed, trying another approach" >> "$log_file"
+        # Use a more complex regex to extract the content field
+        formatted_content=$(echo "$response" | perl -ne 'if(/"content":\s*"((?:\\"|[^"])*)"/) { $c=$1; $c =~ s/\\"/"/g; print $c; }' 2>> "$log_file")
+      fi
+    fi
+  fi
   
-  # Check if jq extraction was successful
-  if [[ $jq_status -ne 0 || -z "$formatted_content" ]]; then
+  # Check if we successfully extracted content
+  if [[ -z "$formatted_content" ]]; then
     echo "Error: Failed to parse OpenAI API response" >&2
     echo "Response structure may be unexpected" >&2
     echo "Full response saved to: $log_file" >&2
