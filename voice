@@ -1,7 +1,9 @@
 #!/usr/bin/env zsh
 
 # voice - A simple script to record voice, transcribe it with Whisper, and save to a file
-# Usage: voice
+# Usage: voice [--tone <tone_type>]
+#   --tone: Optional. Reformat the transcription with the specified tone.
+#           Available tones: business_casual, formal, email, slack, direct_message, social_media, article
 # Press Enter to stop recording
 
 # Check for dependencies
@@ -31,6 +33,16 @@ check_dependencies() {
   # Check for pbcopy (macOS clipboard)
   if ! command -v pbcopy &> /dev/null; then
     missing_deps+=("pbcopy (for clipboard operations)")
+  fi
+  
+  # Check for curl (for OpenAI API calls)
+  if ! command -v curl &> /dev/null; then
+    missing_deps+=("curl (for API calls)")
+  fi
+  
+  # Check for jq (for JSON parsing)
+  if ! command -v jq &> /dev/null; then
+    missing_deps+=("jq (for JSON parsing)")
   fi
 
   # If any dependencies are missing, inform the user and exit
@@ -140,6 +152,97 @@ transcribe_audio() {
   fi
 }
 
+# Apply tone transformation using OpenAI API
+apply_tone() {
+  local content="$1"
+  local tone="$2"
+  local timestamp=$(date +"%Y%m%d_%H%M%S")
+  local log_file="$HOME/voicememos/logs/openai_${timestamp}.log"
+  
+  # Check if OPENAI_API_KEY is set
+  if [[ -z "$OPENAI_API_KEY" ]]; then
+    echo "Error: OPENAI_API_KEY environment variable is not set" >&2
+    echo "Please set it with: export OPENAI_API_KEY='your-api-key'" >&2
+    return 1
+  fi
+  
+  echo "Applying $tone tone to the transcription..."
+  
+  # Create the system prompt based on the tone
+  local system_prompt
+  case "$tone" in
+    business_casual)
+      system_prompt="You are a professional assistant that reformats text into a business casual tone. Keep the content intact but make it appropriate for professional settings while maintaining a conversational feel."
+      ;;
+    formal)
+      system_prompt="You are a professional assistant that reformats text into a formal tone. Keep the content intact but make it appropriate for formal business or academic settings."
+      ;;
+    email)
+      system_prompt="You are a professional assistant that reformats text into a proper email format. Keep the content intact but structure it as a professional email with greeting and signature."
+      ;;
+    slack)
+      system_prompt="You are a professional assistant that reformats text into a Slack message style. Keep the content intact but make it concise and appropriate for team communication on Slack."
+      ;;
+    direct_message)
+      system_prompt="You are a professional assistant that reformats text into a direct message style. Keep the content intact but make it conversational and appropriate for one-on-one messaging."
+      ;;
+    social_media)
+      system_prompt="You are a professional assistant that reformats text into a social media post style. Keep the content intact but make it engaging and appropriate for social media platforms."
+      ;;
+    article)
+      system_prompt="You are a professional assistant that reformats text into an article style. Keep the content intact but structure it with proper paragraphs, transitions, and a more formal writing style."
+      ;;
+    *)
+      echo "Unknown tone: $tone" >&2
+      echo "Available tones: business_casual, formal, email, slack, direct_message, social_media, article" >&2
+      return 1
+      ;;
+  esac
+  
+  # Create the API request payload
+  local payload=$(cat <<EOF
+{
+  "model": "gpt-4o",
+  "messages": [
+    {
+      "role": "system",
+      "content": "$system_prompt"
+    },
+    {
+      "role": "user",
+      "content": "Please reformat the following text into a $tone tone, preserving all the key information: $content"
+    }
+  ],
+  "temperature": 0.7
+}
+EOF
+)
+  
+  # Make the API request
+  local response=$(curl -s -X POST "https://api.openai.com/v1/chat/completions" \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer $OPENAI_API_KEY" \
+    -d "$payload" 2> "$log_file")
+  
+  # Check if the API call was successful
+  if [[ $? -ne 0 ]]; then
+    echo "Error: Failed to call OpenAI API" >&2
+    return 1
+  fi
+  
+  # Extract the content from the response
+  local formatted_content=$(echo "$response" | jq -r '.choices[0].message.content' 2> "$log_file")
+  
+  # Check if jq extraction was successful
+  if [[ $? -ne 0 || -z "$formatted_content" ]]; then
+    echo "Error: Failed to parse OpenAI API response" >&2
+    echo "Response: $response" >> "$log_file"
+    return 1
+  fi
+  
+  echo "$formatted_content"
+}
+
 # Save content to clipboard
 copy_to_clipboard() {
   local content="$1"
@@ -164,8 +267,39 @@ cleanup() {
   find "$HOME/voicememos/logs" -type f -mtime +1 -delete 2>/dev/null || true
 }
 
+# Parse command line arguments
+parse_args() {
+  local tone=""
+  
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --tone)
+        if [[ -n "$2" && "$2" != --* ]]; then
+          tone="$2"
+          shift 2
+        else
+          echo "Error: --tone requires an argument" >&2
+          echo "Available tones: business_casual, formal, email, slack, direct_message, social_media, article" >&2
+          exit 1
+        fi
+        ;;
+      *)
+        echo "Unknown option: $1" >&2
+        echo "Usage: voice [--tone <tone_type>]" >&2
+        echo "Available tones: business_casual, formal, email, slack, direct_message, social_media, article" >&2
+        exit 1
+        ;;
+    esac
+  done
+  
+  echo "$tone"
+}
+
 # Main function
 main() {
+  # Parse command line arguments
+  local tone=$(parse_args "$@")
+  
   # Check dependencies
   check_dependencies
 
@@ -189,15 +323,47 @@ main() {
   if [[ -f "$transcript_file" ]]; then
     # Get the content
     local content=$(cat "$transcript_file")
-
-    # Show the content
-    echo "Transcription:"
-    echo "-------------------------------"
-    echo "$content"
-    echo "-------------------------------"
+    local final_content="$content"
+    
+    # Apply tone transformation if requested
+    if [[ -n "$tone" ]]; then
+      local formatted_content=$(apply_tone "$content" "$tone")
+      
+      if [[ $? -eq 0 && -n "$formatted_content" ]]; then
+        # Save the formatted content to a new file
+        local formatted_file="$HOME/voicememos/memo_${timestamp}_${tone}.txt"
+        printf "%s" "$formatted_content" > "$formatted_file"
+        final_content="$formatted_content"
+        
+        echo "Original Transcription:"
+        echo "-------------------------------"
+        echo "$content"
+        echo "-------------------------------"
+        
+        echo "Formatted with $tone tone:"
+        echo "-------------------------------"
+        echo "$formatted_content"
+        echo "-------------------------------"
+        
+        echo "Saved formatted memo to $formatted_file"
+      else
+        echo "Warning: Tone formatting failed, using original transcription" >&2
+        
+        echo "Transcription:"
+        echo "-------------------------------"
+        echo "$content"
+        echo "-------------------------------"
+      fi
+    else
+      # Show the content
+      echo "Transcription:"
+      echo "-------------------------------"
+      echo "$content"
+      echo "-------------------------------"
+    fi
 
     # Copy to clipboard
-    copy_to_clipboard "$content"
+    copy_to_clipboard "$final_content"
 
     echo "Saved voice memo to $transcript_file"
   else
