@@ -1,0 +1,159 @@
+#!/usr/bin/env zsh
+
+# voice - A simple script to record voice, transcribe it with Whisper, and save to a file
+# Usage: voice
+# Press Enter to stop recording
+
+# Check for dependencies
+check_dependencies() {
+  local missing_deps=()
+  
+  # Check for sox (for recording)
+  if ! command -v rec &> /dev/null; then
+    missing_deps+=("sox (for audio recording)")
+  fi
+  
+  # Check for whisper
+  if ! command -v whisper &> /dev/null; then
+    if [[ -x "$HOME/.asdf/installs/python/3.9.9/bin/whisper" ]]; then
+      # Add specific whisper path to PATH
+      export PATH="$HOME/.asdf/installs/python/3.9.9/bin:$PATH"
+    else
+      missing_deps+=("whisper (OpenAI's transcription tool)")
+    fi
+  fi
+  
+  # Check for pbcopy (macOS clipboard)
+  if ! command -v pbcopy &> /dev/null; then
+    missing_deps+=("pbcopy (for clipboard operations)")
+  fi
+  
+  # If any dependencies are missing, inform the user and exit
+  if (( ${#missing_deps[@]} > 0 )); then
+    echo "Error: The following dependencies are missing:"
+    for dep in "${missing_deps[@]}"; do
+      echo "  - $dep"
+    done
+    echo ""
+    echo "Please install the missing dependencies and try again."
+    echo "For sox: brew install sox"
+    echo "For whisper: pip install -U openai-whisper"
+    exit 1
+  fi
+}
+
+# Ensure the voicememos directory exists
+ensure_voicememos_dir() {
+  local voicememos_dir="$HOME/voicememos"
+  if [[ ! -d "$voicememos_dir" ]]; then
+    echo "Creating voicememos directory at $voicememos_dir"
+    mkdir -p "$voicememos_dir" || {
+      echo "Error: Failed to create directory $voicememos_dir"
+      exit 1
+    }
+  fi
+}
+
+# Record audio until Enter is pressed
+record_audio() {
+  local audio_file="$1"
+  
+  echo "Recording... Press Enter to stop."
+  rec -r 44100 -c 1 "$audio_file" trim 0 silence 1 0.1 1% &
+  local rec_pid=$!
+  
+  # Wait for Enter key
+  read -s
+  
+  # Stop recording
+  kill $rec_pid 2>/dev/null
+  wait $rec_pid 2>/dev/null
+  
+  echo "Recording stopped."
+}
+
+# Transcribe audio with whisper
+transcribe_audio() {
+  local audio_file="$1"
+  local transcript_file="$2"
+  
+  echo "Transcribing audio with Whisper..."
+  whisper "$audio_file" --model base --output_dir "$(dirname "$transcript_file")" --output_format txt
+  
+  # Whisper adds .txt to the audio file name, so we need to find and move it
+  local whisper_output="${audio_file}.txt"
+  if [[ -f "$whisper_output" ]]; then
+    cat "$whisper_output" > "$transcript_file"
+    rm "$whisper_output"
+  else
+    echo "Error: Whisper transcription failed" >&2
+    exit 1
+  fi
+}
+
+# Save content to clipboard
+copy_to_clipboard() {
+  local content="$1"
+  
+  echo "$content" | pbcopy
+  echo "Content copied to clipboard"
+}
+
+# Clean up temporary files
+cleanup() {
+  local audio_file="$1"
+  
+  # Remove temporary files
+  [[ -f "$audio_file" ]] && rm "$audio_file"
+}
+
+# Main function
+main() {
+  # Check dependencies
+  check_dependencies
+  
+  # Ensure voicememos directory exists
+  ensure_voicememos_dir
+  
+  # Create temp file for audio
+  local audio_file=$(mktemp).wav
+  
+  # Record audio
+  record_audio "$audio_file"
+  
+  # Create timestamp for filename
+  local timestamp=$(date +"%Y%m%d_%H%M%S")
+  local transcript_file="$HOME/voicememos/memo_${timestamp}.txt"
+  
+  # Transcribe audio
+  transcribe_audio "$audio_file" "$transcript_file"
+  
+  # Check if transcription was successful
+  if [[ -f "$transcript_file" ]]; then
+    # Get the content
+    local content=$(cat "$transcript_file")
+    
+    # Show the content
+    echo "Transcription:"
+    echo "-------------------------------"
+    echo "$content"
+    echo "-------------------------------"
+    
+    # Copy to clipboard
+    copy_to_clipboard "$content"
+    
+    echo "Saved voice memo to $transcript_file"
+  else
+    echo "Transcription failed."
+    exit 1
+  fi
+  
+  # Clean up
+  cleanup "$audio_file"
+  
+  echo "Voice memo processed successfully!"
+}
+
+# Run the main function
+main "$@"
+
