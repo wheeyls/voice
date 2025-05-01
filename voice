@@ -7,17 +7,17 @@
 # Check for dependencies
 check_dependencies() {
   local missing_deps=()
-  
+
   # Check for sox (for recording)
   if ! command -v rec &> /dev/null; then
     missing_deps+=("sox (for audio recording)")
   fi
-  
+
   # Check for ffmpeg (required by whisper)
   if ! command -v ffmpeg &> /dev/null; then
     missing_deps+=("ffmpeg (required for audio processing)")
   fi
-  
+
   # Check for whisper
   if ! command -v whisper &> /dev/null; then
     if [[ -x "$HOME/.asdf/installs/python/3.9.9/bin/whisper" ]]; then
@@ -27,12 +27,12 @@ check_dependencies() {
       missing_deps+=("whisper (OpenAI's transcription tool)")
     fi
   fi
-  
+
   # Check for pbcopy (macOS clipboard)
   if ! command -v pbcopy &> /dev/null; then
     missing_deps+=("pbcopy (for clipboard operations)")
   fi
-  
+
   # If any dependencies are missing, inform the user and exit
   if (( ${#missing_deps[@]} > 0 )); then
     echo "Error: The following dependencies are missing:"
@@ -52,7 +52,7 @@ check_dependencies() {
 ensure_voicememos_dir() {
   local voicememos_dir="$HOME/voicememos"
   local tmp_dir="$voicememos_dir/tmp"
-  
+
   if [[ ! -d "$voicememos_dir" ]]; then
     echo "Creating voicememos directory at $voicememos_dir"
     mkdir -p "$voicememos_dir" || {
@@ -60,7 +60,7 @@ ensure_voicememos_dir() {
       exit 1
     }
   fi
-  
+
   if [[ ! -d "$tmp_dir" ]]; then
     echo "Creating temporary directory at $tmp_dir"
     mkdir -p "$tmp_dir" || {
@@ -73,18 +73,18 @@ ensure_voicememos_dir() {
 # Record audio until Enter is pressed
 record_audio() {
   local audio_file="$1"
-  
+
   echo "Recording... Press Enter to stop."
   rec -r 48000 -c 1 "$audio_file" trim 0 silence 1 0.1 1% &
   local rec_pid=$!
-  
+
   # Wait for Enter key
   read -s
-  
+
   # Stop recording
   kill $rec_pid 2>/dev/null
   wait $rec_pid 2>/dev/null
-  
+
   echo "Recording stopped."
 }
 
@@ -92,29 +92,27 @@ record_audio() {
 transcribe_audio() {
   local audio_file="$1"
   local transcript_file="$2"
-  
+
   echo "Transcribing audio with Whisper..."
   # Capture whisper's output directly - use --output_dir and --output_format to control files
   local whisper_output=$(whisper "$audio_file" --model base --output_dir "$HOME/voicememos/tmp" --output_format txt 2>&1)
   local whisper_status=$?
-  
+
   # Check if whisper ran successfully
   if [[ $whisper_status -ne 0 ]]; then
     echo "Error: Whisper command failed with status $whisper_status" >&2
     exit 1
   fi
-  
+
   # Extract just the transcribed text, removing timestamps and other info
   # Look for lines that match the timestamp pattern [00:00.000 --> 00:00.000] and extract the text
-  echo "Full whisper output:"
-  echo "$whisper_output"
-  
+
   # Process each line with timestamps and combine them with proper spacing
   local transcription=$(echo "$whisper_output" | grep -E '^\[.*-->.*\]' | sed -E 's/\[.*-->.*\](.*)/\1/g' | awk '{$1=$1};1' | paste -sd " " - | tr -d '\n')
-  
+
   # Trim leading/trailing whitespace
   transcription=$(echo "$transcription" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-  
+
   if [[ -n "$transcription" ]]; then
     # Write the extracted transcription to the output file without adding an extra newline
     printf "%s" "$transcription" > "$transcript_file"
@@ -129,7 +127,7 @@ transcribe_audio() {
 # Save content to clipboard
 copy_to_clipboard() {
   local content="$1"
-  
+
   printf "%s" "$content" | pbcopy
   echo "Content copied to clipboard"
 }
@@ -137,14 +135,14 @@ copy_to_clipboard() {
 # Clean up temporary files
 cleanup() {
   local audio_file="$1"
-  
+
   # Remove temporary files
   [[ -f "$audio_file" ]] && rm "$audio_file"
-  
+
   # Clean up whisper output files
   local base_name=$(basename "$audio_file" .wav)
   [[ -f "$HOME/voicememos/tmp/$base_name.txt" ]] && rm "$HOME/voicememos/tmp/$base_name.txt"
-  
+
   # Optional: Clean up old temp files (older than 1 day)
   find "$HOME/voicememos/tmp" -type f -mtime +1 -delete 2>/dev/null || true
 }
@@ -153,46 +151,46 @@ cleanup() {
 main() {
   # Check dependencies
   check_dependencies
-  
+
   # Ensure voicememos directory exists
   ensure_voicememos_dir
-  
+
   # Create temp file for audio in the voicememos/tmp directory
   local audio_file="$HOME/voicememos/tmp/audio_$(date +"%Y%m%d_%H%M%S").wav"
-  
+
   # Record audio
   record_audio "$audio_file"
-  
+
   # Create timestamp for filename
   local timestamp=$(date +"%Y%m%d_%H%M%S")
   local transcript_file="$HOME/voicememos/memo_${timestamp}.txt"
-  
+
   # Transcribe audio
   transcribe_audio "$audio_file" "$transcript_file"
-  
+
   # Check if transcription was successful
   if [[ -f "$transcript_file" ]]; then
     # Get the content
     local content=$(cat "$transcript_file")
-    
+
     # Show the content
     echo "Transcription:"
     echo "-------------------------------"
     echo "$content"
     echo "-------------------------------"
-    
+
     # Copy to clipboard
     copy_to_clipboard "$content"
-    
+
     echo "Saved voice memo to $transcript_file"
   else
     echo "Transcription failed."
     exit 1
   fi
-  
+
   # Clean up
   cleanup "$audio_file"
-  
+
   echo "Voice memo processed successfully!"
 }
 
