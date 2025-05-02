@@ -192,12 +192,25 @@ module VoiceMemo
         # Give it a moment to clean up
         sleep 0.5
         # Check if process is still running
-        if Process.kill(0, pid) rescue false
+        process_running = false
+        begin
+          Process.kill(0, pid)
+          process_running = true
+        rescue
+          process_running = false
+        end
+        
+        if process_running
           # If still running, try TERM
           Process.kill("TERM", pid)
           sleep 0.5
           # If still running after TERM, use KILL as last resort
-          Process.kill("KILL", pid) rescue nil if Process.kill(0, pid) rescue false
+          begin
+            Process.kill(0, pid)
+            Process.kill("KILL", pid) rescue nil
+          rescue
+            # Process already terminated
+          end
         end
       ensure
         # Wait for the process to fully terminate
