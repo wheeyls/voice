@@ -241,9 +241,14 @@ module VoiceMemo
         
         # Transcribe the audio file
         transcription = ""
-        whisper.transcribe(@audio_file, params) do |whole_text|
-          transcription = whole_text
+        result = whisper.transcribe(@audio_file, params)
+        
+        # Extract text from the result
+        result.each_segment do |segment|
+          transcription += segment.text + " "
         end
+        
+        transcription = transcription.strip
         
         log("WhisperCPP transcription completed")
         
