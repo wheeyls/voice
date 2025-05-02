@@ -7,7 +7,7 @@ require 'open3'
 require 'net/http'
 require 'uri'
 require 'time'
-require 'whisper'
+require 'openai'
 
 module VoiceMemo
   class Voice
@@ -118,15 +118,17 @@ module VoiceMemo
       # Check for sox (for recording)
       missing_deps << 'sox (for audio recording)' unless command_exists?('rec')
 
-      # Check for whispercpp gem
+      # Check for ruby-openai gem
       begin
-        require 'whisper'
+        require 'openai'
       rescue LoadError
-        missing_deps << 'whispercpp (Ruby gem for speech recognition)'
+        missing_deps << 'ruby-openai (Ruby gem for OpenAI API)'
       end
 
-      # Check for curl (for OpenAI API calls)
-      missing_deps << 'curl (for API calls)' unless command_exists?('curl')
+      # Check for OpenAI API key
+      if ENV['OPENAI_API_KEY'].nil? || ENV['OPENAI_API_KEY'].empty?
+        missing_deps << 'OPENAI_API_KEY environment variable'
+      end
 
       # Check for editor
       editor = ENV['EDITOR'] || 'nano'
@@ -138,7 +140,8 @@ module VoiceMemo
       missing_deps.each { |dep| puts "  - #{dep}" }
       puts "\nPlease install the missing dependencies and try again."
       puts 'For sox: brew install sox'
-      puts 'For whispercpp: gem install whispercpp'
+      puts 'For ruby-openai: gem install ruby-openai'
+      puts 'For OpenAI API key: export OPENAI_API_KEY=your-api-key'
       exit 1
     end
 
@@ -213,7 +216,7 @@ module VoiceMemo
     end
 
     def transcribe_audio
-      puts 'Transcribing audio with WhisperCPP...'
+      puts 'Transcribing audio with OpenAI Whisper API...'
       log("Starting transcription for #{@audio_file}")
 
       # Check if audio file has content
@@ -224,40 +227,30 @@ module VoiceMemo
       end
 
       begin
-        # Initialize whisper context with the base.en model
-        whisper = Whisper::Context.new("base.en")
-
-        # Create params with default values first
-        params = Whisper::Params.new
-
-        # Then set individual parameters
-        params.language = "en"
-        params.print_timestamps = false
-        params.print_progress = true
-
-        # Suppress log output from whisper.cpp
-        Whisper.log_set lambda { |level, buffer, _user_data|
-          # Only log errors
-          log("WhisperCPP Error: #{buffer}") if level == Whisper::LOG_LEVEL_ERROR
-        }, nil
-
+        # Initialize OpenAI client
+        client = OpenAI::Client.new(access_token: ENV['OPENAI_API_KEY'])
+        
         # Transcribe the audio file
-        result = whisper.transcribe(@audio_file, params)
-
-        # Extract text from the result by iterating through segments
-        transcription = ''
-        result.each_segment do |segment|
-          transcription += segment.text + ' '
-        end
-
-        transcription = transcription.strip
-
-        log('WhisperCPP transcription completed')
-
+        puts 'Sending audio to OpenAI for transcription...'
+        response = client.audio.transcribe(
+          parameters: {
+            model: "whisper-1",
+            file: File.open(@audio_file, "rb"),
+            language: "en"
+          }
+        )
+        
+        log('OpenAI transcription completed')
+        
+        # Extract the transcription text
+        transcription = response["text"]
+        
         if transcription && !transcription.empty?
+          puts 'Transcription received successfully.'
           File.write(@transcript_file, transcription)
         else
           puts 'Warning: Could not extract transcription text'
+          log("Empty transcription received: #{response.inspect}")
           File.write(@transcript_file, 'No speech detected. Please try recording again with clearer audio.')
         end
       rescue StandardError => e
@@ -302,66 +295,51 @@ module VoiceMemo
                         "#{core_prompt} You are reformatting text according to this instruction: #{tone}. Keep the content intact but adapt it as specified."
                       end
 
-      # Create API request payload
-      payload = {
-        model: 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: system_prompt
-          },
-          {
-            role: 'user',
-            content: "Please reformat the following text into a #{tone} tone, preserving all the key information: #{content}"
-          }
-        ],
-        temperature: 0.7
-      }
+      # Create messages array
+      messages = [
+        {
+          role: 'system',
+          content: system_prompt
+        },
+        {
+          role: 'user',
+          content: "Please reformat the following text into a #{tone} tone, preserving all the key information: #{content}"
+        }
+      ]
 
       # Log the request payload
-      log('API Request Payload:')
-      log(JSON.pretty_generate(payload))
+      log('API Request Messages:')
+      log(JSON.pretty_generate(messages))
 
-      # Make the API request
-      uri = URI.parse('https://api.openai.com/v1/chat/completions')
-      http = Net::HTTP.new(uri.host, uri.port)
-      http.use_ssl = true
-
-      request = Net::HTTP::Post.new(uri.request_uri)
-      request['Content-Type'] = 'application/json'
-      request['Authorization'] = "Bearer #{ENV['OPENAI_API_KEY']}"
-      request.body = payload.to_json
-
-      response = http.request(request)
-
-      # Log the response
-      log("API Response Status: #{response.code}")
-      log('API Response Body:')
-      log(response.body)
-
-      # Print first part of response for debugging
-      puts 'API Response (first 200 chars):' if ENV['DEBUG']
-      puts "#{response.body[0..200]}..." if ENV['DEBUG']
-
-      # Parse the response
       begin
-        json_response = JSON.parse(response.body)
-
-        if json_response['error']
-          puts 'Error from OpenAI API:'
-          puts json_response['error']['message']
-          return nil
+        # Initialize OpenAI client
+        client = OpenAI::Client.new(access_token: ENV['OPENAI_API_KEY'])
+        
+        # Make the API request
+        response = client.chat(
+          parameters: {
+            model: 'gpt-4o',
+            messages: messages,
+            temperature: 0.7
+          }
+        )
+        
+        # Log the response
+        log('API Response:')
+        log(JSON.pretty_generate(response))
+        
+        # Extract the formatted content
+        if response['choices'] && response['choices'][0] && response['choices'][0]['message']
+          return response['choices'][0]['message']['content']
         end
-
-        if json_response['choices'] && json_response['choices'][0] && json_response['choices'][0]['message']
-          return json_response['choices'][0]['message']['content']
-        end
-
+        
         puts 'Error: Unexpected response structure from OpenAI API'
+        log("Unexpected response structure: #{response.inspect}")
         nil
-      rescue JSON::ParserError => e
-        puts "Error parsing JSON response: #{e.message}"
-        log("JSON Parse Error: #{e.message}")
+      rescue StandardError => e
+        puts "Error calling OpenAI API: #{e.message}"
+        log("API Error: #{e.message}")
+        log(e.backtrace.join("\n"))
         nil
       end
     end

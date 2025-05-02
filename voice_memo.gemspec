@@ -29,7 +29,7 @@ Gem::Specification.new do |spec|
   # Dependencies
   spec.add_dependency "json", "~> 2.0"
   spec.add_dependency "optparse", "~> 0.1.1"
-  spec.add_dependency "whispercpp", "~> 1.3.1"
+  spec.add_dependency "ruby-openai", "~> 6.0"
 
   spec.add_development_dependency "bundler", "~> 2.0"
   spec.add_development_dependency "rake", "~> 13.0"

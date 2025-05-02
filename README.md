@@ -13,7 +13,7 @@ gem install voice_memo
 This gem requires the following external dependencies:
 
 - sox (for audio recording)
-- whispercpp (Ruby gem for speech recognition)
+- ruby-openai (Ruby gem for OpenAI API access)
 - OpenAI API key (for tone formatting)
 
 ### Installing Dependencies
@@ -22,7 +22,7 @@ This gem requires the following external dependencies:
 # Install sox
 brew install sox
 
-# The whispercpp gem will be installed automatically as a dependency
+# The ruby-openai gem will be installed automatically as a dependency
 
 # Set your OpenAI API key
 export OPENAI_API_KEY='your-api-key'
