@@ -186,9 +186,27 @@ module VoiceMemo
       # Wait for Enter key
       $stdin.gets
 
-      # Stop recording
-      Process.kill("TERM", pid) rescue nil
-      Process.wait(pid) rescue nil
+      # Stop recording - use SIGINT (Ctrl+C) which is more reliable for terminating sox
+      begin
+        Process.kill("INT", pid)
+        # Give it a moment to clean up
+        sleep 0.5
+        # Check if process is still running
+        if Process.kill(0, pid) rescue false
+          # If still running, try TERM
+          Process.kill("TERM", pid)
+          sleep 0.5
+          # If still running after TERM, use KILL as last resort
+          Process.kill("KILL", pid) rescue nil if Process.kill(0, pid) rescue false
+        end
+      ensure
+        # Wait for the process to fully terminate
+        Process.wait(pid) rescue nil
+        
+        # Double check if any sox/rec processes are still running for this file
+        cleanup_cmd = "pkill -f 'rec.*#{File.basename(@audio_file)}' 2>/dev/null || true"
+        system(cleanup_cmd)
+      end
 
       puts "Recording stopped."
     end
