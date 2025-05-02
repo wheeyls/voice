@@ -33,7 +33,6 @@ module VoiceMemo
 
       if File.exist?(@transcript_file)
         content = File.read(@transcript_file)
-        final_content = content
 
         if @tone
           formatted_content = apply_tone(content, @tone)
@@ -42,40 +41,40 @@ module VoiceMemo
             File.write(@formatted_file, formatted_content)
             final_content = formatted_content
 
-            puts "Original Transcription:"
-            puts "-------------------------------"
+            puts 'Original Transcription:'
+            puts '-------------------------------'
             puts content
-            puts "-------------------------------"
+            puts '-------------------------------'
 
             puts "Formatted with #{@tone} tone:"
-            puts "-------------------------------"
+            puts '-------------------------------'
             puts formatted_content
-            puts "-------------------------------"
+            puts '-------------------------------'
 
             puts "Saved formatted memo to #{@formatted_file}"
-            
+
             # Open in editor for final edits
             edited_content = open_in_editor(final_content)
             copy_to_clipboard(edited_content)
           else
-            puts "Warning: Tone formatting failed, using original transcription"
+            puts 'Warning: Tone formatting failed, using original transcription'
             puts "Check logs in #{@logs_dir} for details"
 
-            puts "Transcription:"
-            puts "-------------------------------"
+            puts 'Transcription:'
+            puts '-------------------------------'
             puts content
-            puts "-------------------------------"
-            
+            puts '-------------------------------'
+
             # Open in editor for final edits
             edited_content = open_in_editor(content)
             copy_to_clipboard(edited_content)
           end
         else
-          puts "Transcription:"
-          puts "-------------------------------"
+          puts 'Transcription:'
+          puts '-------------------------------'
           puts content
-          puts "-------------------------------"
-          
+          puts '-------------------------------'
+
           # Open in editor for final edits
           edited_content = open_in_editor(content)
           copy_to_clipboard(edited_content)
@@ -83,12 +82,12 @@ module VoiceMemo
 
         puts "Saved voice memo to #{@transcript_file}"
       else
-        puts "Transcription failed."
+        puts 'Transcription failed.'
         exit 1
       end
 
       cleanup
-      puts "Voice memo processed successfully!"
+      puts 'Voice memo processed successfully!'
     end
 
     private
@@ -97,13 +96,13 @@ module VoiceMemo
       tone = nil
 
       parser = OptionParser.new do |opts|
-        opts.banner = "Usage: voice [options]"
+        opts.banner = 'Usage: voice [options]'
 
-        opts.on("--tone TONE", "Apply a specific tone to the transcription") do |t|
+        opts.on('--tone TONE', 'Apply a specific tone to the transcription') do |t|
           tone = t
         end
 
-        opts.on_tail("-h", "--help", "Show this message") do
+        opts.on_tail('-h', '--help', 'Show this message') do
           puts opts
           exit
         end
@@ -117,30 +116,30 @@ module VoiceMemo
       missing_deps = []
 
       # Check for sox (for recording)
-      missing_deps << "sox (for audio recording)" unless command_exists?('rec')
+      missing_deps << 'sox (for audio recording)' unless command_exists?('rec')
 
       # Check for whispercpp gem
       begin
         require 'whisper'
       rescue LoadError
-        missing_deps << "whispercpp (Ruby gem for speech recognition)"
+        missing_deps << 'whispercpp (Ruby gem for speech recognition)'
       end
 
       # Check for curl (for OpenAI API calls)
-      missing_deps << "curl (for API calls)" unless command_exists?('curl')
-      
+      missing_deps << 'curl (for API calls)' unless command_exists?('curl')
+
       # Check for editor
       editor = ENV['EDITOR'] || 'nano'
       missing_deps << "#{editor} (for editing transcriptions)" unless command_exists?(editor)
 
-      if missing_deps.any?
-        puts "Error: The following dependencies are missing:"
-        missing_deps.each { |dep| puts "  - #{dep}" }
-        puts "\nPlease install the missing dependencies and try again."
-        puts "For sox: brew install sox"
-        puts "For whispercpp: gem install whispercpp"
-        exit 1
-      end
+      return unless missing_deps.any?
+
+      puts 'Error: The following dependencies are missing:'
+      missing_deps.each { |dep| puts "  - #{dep}" }
+      puts "\nPlease install the missing dependencies and try again."
+      puts 'For sox: brew install sox'
+      puts 'For whispercpp: gem install whispercpp'
+      exit 1
     end
 
     def command_exists?(command)
@@ -159,20 +158,20 @@ module VoiceMemo
     def record_audio
       log("Starting audio recording for #{@audio_file}")
 
-      puts "Recording... Press Enter to stop."
+      puts 'Recording... Press Enter to stop.'
 
       # Start recording in a separate process
       pid = spawn("rec -r 48000 -c 1 #{@audio_file} trim 0 silence 1 0.1 1% 2>> #{@log_file}")
 
       # Wait for Enter key
       $stdin.gets
-      
+
       # Record for at least 1 second to avoid empty files
       sleep 0.5
 
       # Stop recording - use SIGINT (Ctrl+C) which is more reliable for terminating sox
       begin
-        Process.kill("INT", pid)
+        Process.kill('INT', pid)
         # Give it a moment to clean up
         sleep 0.5
         # Check if process is still running
@@ -180,85 +179,94 @@ module VoiceMemo
         begin
           Process.kill(0, pid)
           process_running = true
-        rescue
+        rescue StandardError
           process_running = false
         end
-        
+
         if process_running
           # If still running, try TERM
-          Process.kill("TERM", pid)
+          Process.kill('TERM', pid)
           sleep 0.5
           # If still running after TERM, use KILL as last resort
           begin
             Process.kill(0, pid)
             # If still running after TERM, use KILL as last resort
-            Process.kill("KILL", pid)
-          rescue
+            Process.kill('KILL', pid)
+          rescue StandardError
             # Process already terminated
           end
         end
       ensure
         # Wait for the process to fully terminate
-        Process.wait(pid) rescue nil
-        
+        begin
+          Process.wait(pid)
+        rescue StandardError
+          nil
+        end
+
         # Double check if any sox/rec processes are still running for this file
         cleanup_cmd = "pkill -f 'rec.*#{File.basename(@audio_file)}' 2>/dev/null || true"
         system(cleanup_cmd)
       end
 
-      puts "Recording stopped."
+      puts 'Recording stopped.'
     end
 
     def transcribe_audio
-      puts "Transcribing audio with WhisperCPP..."
+      puts 'Transcribing audio with WhisperCPP...'
       log("Starting transcription for #{@audio_file}")
-      
+
       # Check if audio file has content
       if !File.exist?(@audio_file) || File.size(@audio_file) < 1000
-        puts "Warning: Audio file is empty or too small. No speech was detected."
-        File.write(@transcript_file, "No speech detected. Please try recording again with clearer audio.")
+        puts 'Warning: Audio file is empty or too small. No speech was detected.'
+        File.write(@transcript_file, 'No speech detected. Please try recording again with clearer audio.')
         return
       end
 
       begin
         # Initialize whisper context with the base model
-        whisper = Whisper::Context.new("base")
-        
+        base_en = Whisper::Model.pre_converted_models['base.en']
+        whisper = Whisper::Context.new(base_en)
+
         # Set up parameters
+        #params = Whisper::Params.new(
+          #language: 'en',
+          #print_timestamps: false,
+          #print_progress: true
+        #)
         params = Whisper::Params.new(
           language: "en",
+          offset: 10_000,
+          duration: 60_000,
+          max_text_tokens: 300,
+          translate: true,
           print_timestamps: false,
-          print_progress: true
+          initial_prompt: "Initial prompt here."
         )
-        
+
         # Suppress log output from whisper.cpp
-        Whisper.log_set ->(level, buffer, user_data) {
+        Whisper.log_set lambda { |level, buffer, _user_data|
           # Only log errors
-          if level == Whisper::LOG_LEVEL_ERROR
-            log("WhisperCPP Error: #{buffer}")
-          end
+          log("WhisperCPP Error: #{buffer}") if level == Whisper::LOG_LEVEL_ERROR
         }, nil
-        
+
         # Transcribe the audio file
-        transcription = ""
-        result = whisper.transcribe(@audio_file, params)
-        
-        # Extract text from the result
-        result.each_segment do |segment|
-          transcription += segment.text + " "
+        transcription = ''
+        whisper.transcribe(@audio_file, params) do |whole_text|
+          transcription = whole_text
         end
-        
+
         transcription = transcription.strip
-        
-        log("WhisperCPP transcription completed")
-        
+
+        log('WhisperCPP transcription completed')
+
         if transcription && !transcription.empty?
           File.write(@transcript_file, transcription)
         else
-          puts "Warning: Could not extract transcription text"
-          File.write(@transcript_file, "No speech detected. Please try recording again with clearer audio.")
+          puts 'Warning: Could not extract transcription text'
+          File.write(@transcript_file, 'No speech detected. Please try recording again with clearer audio.')
         end
-      rescue => e
+      rescue StandardError => e
         puts "Error during transcription: #{e.message}"
         log("Transcription error: #{e.message}")
         log(e.backtrace.join("\n"))
@@ -272,7 +280,7 @@ module VoiceMemo
 
       # Check if OPENAI_API_KEY is set
       unless ENV['OPENAI_API_KEY']
-        puts "Error: OPENAI_API_KEY environment variable is not set"
+        puts 'Error: OPENAI_API_KEY environment variable is not set'
         puts "Please set it with: export OPENAI_API_KEY='your-api-key'"
         return nil
       end
@@ -282,34 +290,34 @@ module VoiceMemo
 
       # Create system prompt based on tone
       system_prompt = case tone
-      when 'business_casual'
-        "#{core_prompt} You are reformatting text into a business casual tone. Keep the content intact but make it appropriate for professional settings while maintaining a conversational feel."
-      when 'formal'
-        "#{core_prompt} You are reformatting text into a formal tone. Keep the content intact but make it appropriate for formal business or academic settings."
-      when 'email'
-        "#{core_prompt} You are reformatting text into a proper email format. Keep the content intact but structure it as a professional email with greeting and signature."
-      when 'slack'
-        "#{core_prompt} You are reformatting text into a Slack message style. Keep the content intact but make it concise and appropriate for team communication on Slack."
-      when 'direct_message'
-        "#{core_prompt} You are reformatting text into a direct message style. Keep the content intact but make it conversational and appropriate for one-on-one messaging."
-      when 'social_media'
-        "#{core_prompt} You are reformatting text into a social media post style. Keep the content intact but make it engaging and appropriate for social media platforms."
-      when 'article'
-        "#{core_prompt} You are reformatting text into an article style. Keep the content intact but structure it with proper paragraphs, transitions, and a more formal writing style."
-      else
-        "#{core_prompt} You are reformatting text according to this instruction: #{tone}. Keep the content intact but adapt it as specified."
-      end
+                      when 'business_casual'
+                        "#{core_prompt} You are reformatting text into a business casual tone. Keep the content intact but make it appropriate for professional settings while maintaining a conversational feel."
+                      when 'formal'
+                        "#{core_prompt} You are reformatting text into a formal tone. Keep the content intact but make it appropriate for formal business or academic settings."
+                      when 'email'
+                        "#{core_prompt} You are reformatting text into a proper email format. Keep the content intact but structure it as a professional email with greeting and signature."
+                      when 'slack'
+                        "#{core_prompt} You are reformatting text into a Slack message style. Keep the content intact but make it concise and appropriate for team communication on Slack."
+                      when 'direct_message'
+                        "#{core_prompt} You are reformatting text into a direct message style. Keep the content intact but make it conversational and appropriate for one-on-one messaging."
+                      when 'social_media'
+                        "#{core_prompt} You are reformatting text into a social media post style. Keep the content intact but make it engaging and appropriate for social media platforms."
+                      when 'article'
+                        "#{core_prompt} You are reformatting text into an article style. Keep the content intact but structure it with proper paragraphs, transitions, and a more formal writing style."
+                      else
+                        "#{core_prompt} You are reformatting text according to this instruction: #{tone}. Keep the content intact but adapt it as specified."
+                      end
 
       # Create API request payload
       payload = {
-        model: "gpt-4o",
+        model: 'gpt-4o',
         messages: [
           {
-            role: "system",
+            role: 'system',
             content: system_prompt
           },
           {
-            role: "user",
+            role: 'user',
             content: "Please reformat the following text into a #{tone} tone, preserving all the key information: #{content}"
           }
         ],
@@ -317,28 +325,28 @@ module VoiceMemo
       }
 
       # Log the request payload
-      log("API Request Payload:")
+      log('API Request Payload:')
       log(JSON.pretty_generate(payload))
 
       # Make the API request
-      uri = URI.parse("https://api.openai.com/v1/chat/completions")
+      uri = URI.parse('https://api.openai.com/v1/chat/completions')
       http = Net::HTTP.new(uri.host, uri.port)
       http.use_ssl = true
 
       request = Net::HTTP::Post.new(uri.request_uri)
-      request["Content-Type"] = "application/json"
-      request["Authorization"] = "Bearer #{ENV['OPENAI_API_KEY']}"
+      request['Content-Type'] = 'application/json'
+      request['Authorization'] = "Bearer #{ENV['OPENAI_API_KEY']}"
       request.body = payload.to_json
 
       response = http.request(request)
 
       # Log the response
       log("API Response Status: #{response.code}")
-      log("API Response Body:")
+      log('API Response Body:')
       log(response.body)
 
       # Print first part of response for debugging
-      puts "API Response (first 200 chars):" if ENV['DEBUG']
+      puts 'API Response (first 200 chars):' if ENV['DEBUG']
       puts "#{response.body[0..200]}..." if ENV['DEBUG']
 
       # Parse the response
@@ -346,27 +354,27 @@ module VoiceMemo
         json_response = JSON.parse(response.body)
 
         if json_response['error']
-          puts "Error from OpenAI API:"
+          puts 'Error from OpenAI API:'
           puts json_response['error']['message']
           return nil
         end
 
         if json_response['choices'] && json_response['choices'][0] && json_response['choices'][0]['message']
           return json_response['choices'][0]['message']['content']
-        else
-          puts "Error: Unexpected response structure from OpenAI API"
-          return nil
         end
+
+        puts 'Error: Unexpected response structure from OpenAI API'
+        nil
       rescue JSON::ParserError => e
         puts "Error parsing JSON response: #{e.message}"
         log("JSON Parse Error: #{e.message}")
-        return nil
+        nil
       end
     end
 
     def get_core_prompt
       prompt_file = File.join(ENV['HOME'], '.voice-default-prompt')
-      default_prompt = "You are a dictation assistant. You will be used to take dictation for voice messages, emails, articles and announcements, as well as technical specifications and note keeping."
+      default_prompt = 'You are a dictation assistant. You will be used to take dictation for voice messages, emails, articles and announcements, as well as technical specifications and note keeping.'
 
       if File.exist?(prompt_file)
         prompt = File.read(prompt_file).strip
@@ -380,30 +388,34 @@ module VoiceMemo
       # Create a temporary file for editing
       edit_file = File.join(@tmp_dir, "edit_#{@timestamp}.txt")
       File.write(edit_file, content)
-      
+
       # Determine which editor to use
       editor = ENV['EDITOR'] || 'nano'
-      
+
       puts "Opening content in #{editor} for final edits. Save and exit when done."
       log("Opening content in editor: #{editor}")
-      
+
       # Open the file in the editor
       system("#{editor} #{edit_file}")
-      
+
       # Read the edited content
       if File.exist?(edit_file)
         edited_content = File.read(edit_file)
-        File.unlink(edit_file) rescue nil
-        return edited_content
+        begin
+          File.unlink(edit_file)
+        rescue StandardError
+          nil
+        end
+        edited_content
       else
-        puts "Warning: Editor did not save the file. Using original content."
-        return content
+        puts 'Warning: Editor did not save the file. Using original content.'
+        content
       end
     end
-    
+
     def copy_to_clipboard(content)
       IO.popen('pbcopy', 'w') { |f| f << content }
-      puts "Content copied to clipboard"
+      puts 'Content copied to clipboard'
     end
 
     def cleanup
@@ -424,20 +436,31 @@ module VoiceMemo
 
     def clean_old_files(dir)
       Dir.glob(File.join(dir, '*')).each do |file|
-        if File.file?(file) && (Time.now - File.mtime(file)) > 86400 # 1 day in seconds
-          File.unlink(file) rescue nil
+        next unless File.file?(file) && (Time.now - File.mtime(file)) > 86_400
+
+        begin
+          File.unlink(file)
+        rescue StandardError
+          nil
         end
+        # 1 day in seconds
       end
     end
 
     def rotate_log_file
-      if File.exist?(@log_file) && File.size(@log_file) > 10_485_760 # 10MB
-        timestamp = Time.now.strftime('%Y%m%d_%H%M%S')
-        FileUtils.mv(@log_file, File.join(@logs_dir, "voice_#{timestamp}.log"))
+      return unless File.exist?(@log_file) && File.size(@log_file) > 10_485_760 # 10MB
 
-        # Keep only the 5 most recent rotated logs
-        log_files = Dir.glob(File.join(@logs_dir, 'voice_*.log')).sort_by { |f| File.mtime(f) }.reverse
-        log_files[5..-1].each { |f| File.unlink(f) rescue nil } if log_files.size > 5
+      timestamp = Time.now.strftime('%Y%m%d_%H%M%S')
+      FileUtils.mv(@log_file, File.join(@logs_dir, "voice_#{timestamp}.log"))
+
+      # Keep only the 5 most recent rotated logs
+      log_files = Dir.glob(File.join(@logs_dir, 'voice_*.log')).sort_by { |f| File.mtime(f) }.reverse
+      return unless log_files.size > 5
+
+      log_files[5..-1].each do |f|
+        File.unlink(f)
+      rescue StandardError
+        nil
       end
     end
 
