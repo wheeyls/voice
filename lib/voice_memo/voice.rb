@@ -29,10 +29,29 @@ module VoiceMemo
       check_dependencies
       ensure_directories
       record_audio
+      
+      # Check if audio file was created successfully
+      unless File.exist?(@audio_file) && File.size(@audio_file) > 1000
+        puts "Error: Audio recording failed or file is too small."
+        log("Audio recording failed or file is too small: #{@audio_file}")
+        return
+      end
+      
       transcribe_audio
 
       if File.exist?(@transcript_file)
         content = File.read(@transcript_file)
+        
+        # Check if the content indicates an error
+        if content.start_with?('Error:')
+          puts "Transcription error occurred:"
+          puts '-------------------------------'
+          puts content
+          puts '-------------------------------'
+          puts "Check logs in #{@logs_dir} for details"
+          cleanup
+          return
+        end
 
         if @tone
           formatted_content = apply_tone(content, @tone)
@@ -81,13 +100,13 @@ module VoiceMemo
         end
 
         puts "Saved voice memo to #{@transcript_file}"
+        cleanup
+        puts 'Voice memo processed successfully!'
       else
         puts 'Transcription failed.'
-        exit 1
+        log("Transcription file not created: #{@transcript_file}")
+        cleanup
       end
-
-      cleanup
-      puts 'Voice memo processed successfully!'
     end
 
     private
@@ -163,8 +182,11 @@ module VoiceMemo
 
       puts 'Recording... Press Enter to stop.'
 
-      # Start recording in a separate process
-      pid = spawn("rec -r 48000 -c 1 #{@audio_file} trim 0 silence 1 0.1 1% 2>> #{@log_file}")
+      # Use specific format that OpenAI accepts: 16kHz sample rate, mono, 16-bit PCM WAV
+      # This is important as OpenAI has specific format requirements
+      pid = spawn("rec -r 16000 -c 1 -b 16 -e signed-integer #{@audio_file} trim 0 silence 1 0.1 1% 2>> #{@log_file}")
+      
+      log("Recording process started with PID: #{pid}")
 
       # Wait for Enter key
       $stdin.gets
@@ -174,6 +196,7 @@ module VoiceMemo
 
       # Stop recording - use SIGINT (Ctrl+C) which is more reliable for terminating sox
       begin
+        log("Stopping recording process (PID: #{pid})")
         Process.kill('INT', pid)
         # Give it a moment to clean up
         sleep 0.5
@@ -188,22 +211,27 @@ module VoiceMemo
 
         if process_running
           # If still running, try TERM
+          log("Process still running, sending TERM signal")
           Process.kill('TERM', pid)
           sleep 0.5
           # If still running after TERM, use KILL as last resort
           begin
             Process.kill(0, pid)
+            log("Process still running after TERM, sending KILL signal")
             # If still running after TERM, use KILL as last resort
             Process.kill('KILL', pid)
           rescue StandardError
             # Process already terminated
+            log("Process already terminated")
           end
         end
       ensure
         # Wait for the process to fully terminate
         begin
           Process.wait(pid)
-        rescue StandardError
+          log("Recording process terminated")
+        rescue StandardError => e
+          log("Error waiting for process: #{e.message}")
           nil
         end
 
@@ -213,6 +241,19 @@ module VoiceMemo
       end
 
       puts 'Recording stopped.'
+      
+      # Verify the audio file was created properly
+      if File.exist?(@audio_file)
+        file_size = File.size(@audio_file)
+        log("Audio file created: #{@audio_file}, size: #{file_size} bytes")
+        
+        if file_size < 1000
+          log("Warning: Audio file is very small (#{file_size} bytes), may not contain speech")
+        end
+      else
+        log("Error: Audio file was not created")
+        puts "Error: Failed to create audio recording."
+      end
     end
 
     def transcribe_audio
@@ -220,33 +261,65 @@ module VoiceMemo
       log("Starting transcription for #{@audio_file}")
 
       # Check if audio file has content
-      if !File.exist?(@audio_file) || File.size(@audio_file) < 1000
-        puts 'Warning: Audio file is empty or too small. No speech was detected.'
+      if !File.exist?(@audio_file)
+        puts 'Error: Audio file does not exist.'
+        File.write(@transcript_file, 'Error: Audio file does not exist.')
+        return
+      end
+
+      file_size = File.size(@audio_file)
+      log("Audio file size: #{file_size} bytes")
+      
+      if file_size < 1000
+        puts 'Warning: Audio file is too small. No speech was likely detected.'
         File.write(@transcript_file, 'No speech detected. Please try recording again with clearer audio.')
+        return
+      end
+      
+      # Check if file is too large (OpenAI has a 25MB limit)
+      if file_size > 25 * 1024 * 1024
+        puts 'Error: Audio file exceeds the 25MB size limit for OpenAI API.'
+        File.write(@transcript_file, 'Error: Audio file exceeds the 25MB size limit for OpenAI API.')
         return
       end
 
       begin
+        # Log file details
+        log("Audio file details: #{@audio_file}")
+        log("File exists: #{File.exist?(@audio_file)}")
+        log("File size: #{File.size(@audio_file)} bytes")
+        log("File readable: #{File.readable?(@audio_file)}")
+        
         # Initialize OpenAI client
         client = OpenAI::Client.new(access_token: ENV['OPENAI_API_KEY'])
         
+        # Verify the file can be opened
+        audio_file = File.open(@audio_file, "rb")
+        log("File opened successfully")
+        
         # Transcribe the audio file
         puts 'Sending audio to OpenAI for transcription...'
+        log("Sending request to OpenAI API with file: #{@audio_file}")
+        
+        # Add response_format parameter to ensure we get text back
         response = client.audio.transcribe(
           parameters: {
             model: "whisper-1",
-            file: File.open(@audio_file, "rb"),
-            language: "en"
+            file: audio_file,
+            language: "en",
+            response_format: "json"
           }
         )
         
         log('OpenAI transcription completed')
+        log("Response: #{response.inspect}")
         
         # Extract the transcription text
         transcription = response["text"]
         
         if transcription && !transcription.empty?
           puts 'Transcription received successfully.'
+          log("Transcription text: #{transcription[0..100]}...")
           File.write(@transcript_file, transcription)
         else
           puts 'Warning: Could not extract transcription text'
@@ -257,8 +330,30 @@ module VoiceMemo
         puts "Error during transcription: #{e.message}"
         log("Transcription error: #{e.message}")
         log(e.backtrace.join("\n"))
-        File.write(@transcript_file, "Error during transcription: #{e.message}")
-        exit 1
+        
+        # Provide more helpful error messages based on common issues
+        error_message = case e.message
+                        when /status 400/
+                          "The API rejected the request. This could be due to an invalid audio format, " +
+                          "corrupted audio file, or unsupported audio codec. Try recording again."
+                        when /status 401/
+                          "Authentication error. Please check your OpenAI API key."
+                        when /status 429/
+                          "Rate limit exceeded. Please try again later."
+                        when /status 5\d\d/
+                          "OpenAI server error. Please try again later."
+                        else
+                          "Error during transcription: #{e.message}"
+                        end
+        
+        puts error_message
+        File.write(@transcript_file, error_message)
+        
+        # Don't exit the program on error, just return
+        return
+      ensure
+        # Make sure we close the file handle if it was opened
+        audio_file.close if defined?(audio_file) && !audio_file.nil? && !audio_file.closed?
       end
     end
 
