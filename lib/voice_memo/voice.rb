@@ -229,7 +229,7 @@ module VoiceMemo
 
         # Create params with default values first
         params = Whisper::Params.new
-        
+
         # Then set individual parameters
         params.language = "en"
         params.print_timestamps = false
@@ -243,13 +243,13 @@ module VoiceMemo
 
         # Transcribe the audio file
         result = whisper.transcribe(@audio_file, params)
-        
+
         # Extract text from the result by iterating through segments
         transcription = ''
         result.each_segment do |segment|
           transcription += segment.text + ' '
         end
-        
+
         transcription = transcription.strip
 
         log('WhisperCPP transcription completed')
