@@ -185,6 +185,9 @@ module VoiceMemo
 
       # Wait for Enter key
       $stdin.gets
+      
+      # Record for at least 1 second to avoid empty files
+      sleep 0.5
 
       # Stop recording - use SIGINT (Ctrl+C) which is more reliable for terminating sox
       begin
@@ -228,6 +231,13 @@ module VoiceMemo
     def transcribe_audio
       puts "Transcribing audio with Whisper..."
       log("Starting transcription for #{@audio_file}")
+      
+      # Check if audio file has content
+      if !File.exist?(@audio_file) || File.size(@audio_file) < 1000
+        puts "Warning: Audio file is empty or too small. No speech was detected."
+        File.write(@transcript_file, "No speech detected. Please try recording again with clearer audio.")
+        return
+      end
 
       # Run whisper command
       output, status = Open3.capture2e(
@@ -265,6 +275,11 @@ module VoiceMemo
       lines = output.lines.grep(/^\[.*-->.*\]/)
 
       if lines.empty?
+        # Check if output only contains warnings or errors
+        if output.strip.match?(/^(Warning:|Error:|\/.*\.py)/)
+          log("No valid transcription found, only warnings/errors detected")
+          return "No speech detected. Please try recording again with clearer audio."
+        end
         return nil
       end
 
