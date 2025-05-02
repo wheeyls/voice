@@ -50,6 +50,14 @@ voice --tone "write this as a haiku"
 voice --tone "format this as a bullet-point list of action items"
 ```
 
+The tool will open your default editor (set by the EDITOR environment variable) to allow you to make final edits to the transcription before copying it to the clipboard. If EDITOR is not set, it will default to nano.
+
+You can set your preferred editor with:
+
+```bash
+export EDITOR=vim  # or any editor you prefer
+```
+
 ## Configuration
 
 You can customize the core prompt by editing the file at `~/.voice-default-prompt`.

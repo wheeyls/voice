@@ -53,8 +53,10 @@ module VoiceMemo
             puts "-------------------------------"
 
             puts "Saved formatted memo to #{@formatted_file}"
-
-            copy_to_clipboard(formatted_content)
+            
+            # Open in editor for final edits
+            edited_content = open_in_editor(final_content)
+            copy_to_clipboard(edited_content)
           else
             puts "Warning: Tone formatting failed, using original transcription"
             puts "Check logs in #{@logs_dir} for details"
@@ -63,16 +65,20 @@ module VoiceMemo
             puts "-------------------------------"
             puts content
             puts "-------------------------------"
-
-            copy_to_clipboard(content)
+            
+            # Open in editor for final edits
+            edited_content = open_in_editor(content)
+            copy_to_clipboard(edited_content)
           end
         else
           puts "Transcription:"
           puts "-------------------------------"
           puts content
           puts "-------------------------------"
-
-          copy_to_clipboard(content)
+          
+          # Open in editor for final edits
+          edited_content = open_in_editor(content)
+          copy_to_clipboard(edited_content)
         end
 
         puts "Saved voice memo to #{@transcript_file}"
@@ -128,6 +134,10 @@ module VoiceMemo
 
       # Check for curl (for OpenAI API calls)
       missing_deps << "curl (for API calls)" unless command_exists?('curl')
+      
+      # Check for editor
+      editor = ENV['EDITOR'] || 'nano'
+      missing_deps << "#{editor} (for editing transcriptions)" unless command_exists?(editor)
 
       if missing_deps.any?
         puts "Error: The following dependencies are missing:"
@@ -342,6 +352,31 @@ module VoiceMemo
       end
     end
 
+    def open_in_editor(content)
+      # Create a temporary file for editing
+      edit_file = File.join(@tmp_dir, "edit_#{@timestamp}.txt")
+      File.write(edit_file, content)
+      
+      # Determine which editor to use
+      editor = ENV['EDITOR'] || 'nano'
+      
+      puts "Opening content in #{editor} for final edits. Save and exit when done."
+      log("Opening content in editor: #{editor}")
+      
+      # Open the file in the editor
+      system("#{editor} #{edit_file}")
+      
+      # Read the edited content
+      if File.exist?(edit_file)
+        edited_content = File.read(edit_file)
+        File.unlink(edit_file) rescue nil
+        return edited_content
+      else
+        puts "Warning: Editor did not save the file. Using original content."
+        return content
+      end
+    end
+    
     def copy_to_clipboard(content)
       IO.popen('pbcopy', 'w') { |f| f << content }
       puts "Content copied to clipboard"
