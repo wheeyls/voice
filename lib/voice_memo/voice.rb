@@ -27,7 +27,6 @@ module VoiceMemo
     def run
       check_dependencies
       ensure_directories
-      create_default_prompt_file
       record_audio
       transcribe_audio
 
@@ -160,18 +159,6 @@ module VoiceMemo
           puts "Creating directory at #{dir}"
           FileUtils.mkdir_p(dir)
         end
-      end
-    end
-
-    def create_default_prompt_file
-      prompt_file = File.join(ENV['HOME'], '.voice-default-prompt')
-
-      unless File.exist?(prompt_file)
-        puts "Creating default prompt file at #{prompt_file}"
-        File.write(prompt_file, <<~PROMPT)
-          You are a dictation assistant for Mike Wheeler, a CTO of G2.com. Mike is a busy executive who is still an individual contributor, and actively coding on a daily basis. He is a web developer first, and a CTO second. He is a product engineer that focuses on highly integrated teams building early business solutions. You will be used to take dictation for voice messages, emails, articles and announcements, as well as technical specifications and note keeping.
-        PROMPT
-        puts "Default prompt file created. You can edit it at #{prompt_file}"
       end
     end
 
