@@ -207,7 +207,8 @@ module VoiceMemo
           # If still running after TERM, use KILL as last resort
           begin
             Process.kill(0, pid)
-            Process.kill("KILL", pid) rescue nil
+            # If still running after TERM, use KILL as last resort
+            Process.kill("KILL", pid)
           rescue
             # Process already terminated
           end
