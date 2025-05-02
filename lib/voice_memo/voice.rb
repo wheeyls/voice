@@ -226,8 +226,14 @@ module VoiceMemo
         return
       end
 
+      # Set environment variable to filter out FP16 warning
+      env = {
+        "PYTHONWARNINGS" => "ignore::UserWarning"
+      }
+
       # Run whisper command
       output, status = Open3.capture2e(
+        env,
         "whisper",
         @audio_file,
         "--model", "base",
@@ -263,7 +269,7 @@ module VoiceMemo
 
       if lines.empty?
         # Check if output only contains warnings or errors
-        if output.strip.match?(/^(Warning:|Error:|\/.*\.py)/)
+        if output.strip.match?(/^(Warning:|Error:|\/.*\.py|.*FP16.*)/)
           log("No valid transcription found, only warnings/errors detected")
           return "No speech detected. Please try recording again with clearer audio."
         end
