@@ -224,25 +224,16 @@ module VoiceMemo
       end
 
       begin
-        # Initialize whisper context with the base model
-        base_en = Whisper::Model.pre_converted_models['base.en']
-        whisper = Whisper::Context.new(base_en)
+        # Initialize whisper context with the base.en model
+        whisper = Whisper::Context.new("base.en")
 
-        # Set up parameters
-        #params = Whisper::Params.new(
-          #language: 'en',
-          #print_timestamps: false,
-          #print_progress: true
-        #)
-        params = Whisper::Params.new(
-          language: "en",
-          offset: 10_000,
-          duration: 60_000,
-          max_text_tokens: 300,
-          translate: true,
-          print_timestamps: false,
-          initial_prompt: "Initial prompt here."
-        )
+        # Create params with default values first
+        params = Whisper::Params.new
+        
+        # Then set individual parameters
+        params.language = "en"
+        params.print_timestamps = false
+        params.print_progress = true
 
         # Suppress log output from whisper.cpp
         Whisper.log_set lambda { |level, buffer, _user_data|
@@ -251,11 +242,14 @@ module VoiceMemo
         }, nil
 
         # Transcribe the audio file
+        result = whisper.transcribe(@audio_file, params)
+        
+        # Extract text from the result by iterating through segments
         transcription = ''
-        whisper.transcribe(@audio_file, params) do |whole_text|
-          transcription = whole_text
+        result.each_segment do |segment|
+          transcription += segment.text + ' '
         end
-
+        
         transcription = transcription.strip
 
         log('WhisperCPP transcription completed')
