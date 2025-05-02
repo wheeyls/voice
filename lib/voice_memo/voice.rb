@@ -7,6 +7,7 @@ require 'open3'
 require 'net/http'
 require 'uri'
 require 'time'
+require 'whisper'
 
 module VoiceMemo
   class Voice
@@ -118,17 +119,11 @@ module VoiceMemo
       # Check for sox (for recording)
       missing_deps << "sox (for audio recording)" unless command_exists?('rec')
 
-      # Check for ffmpeg (required by whisper)
-      missing_deps << "ffmpeg (required for audio processing)" unless command_exists?('ffmpeg')
-
-      # Check for whisper
-      unless command_exists?('whisper')
-        whisper_path = File.join(ENV['HOME'], '.asdf/installs/python/3.9.9/bin/whisper')
-        if File.executable?(whisper_path)
-          ENV['PATH'] = "#{File.dirname(whisper_path)}:#{ENV['PATH']}"
-        else
-          missing_deps << "whisper (OpenAI's transcription tool)"
-        end
+      # Check for whispercpp gem
+      begin
+        require 'whisper'
+      rescue LoadError
+        missing_deps << "whispercpp (Ruby gem for speech recognition)"
       end
 
       # Check for curl (for OpenAI API calls)
@@ -143,8 +138,7 @@ module VoiceMemo
         missing_deps.each { |dep| puts "  - #{dep}" }
         puts "\nPlease install the missing dependencies and try again."
         puts "For sox: brew install sox"
-        puts "For ffmpeg: brew install ffmpeg"
-        puts "For whisper: pip install -U openai-whisper"
+        puts "For whispercpp: gem install whispercpp"
         exit 1
       end
     end
@@ -216,7 +210,7 @@ module VoiceMemo
     end
 
     def transcribe_audio
-      puts "Transcribing audio with Whisper..."
+      puts "Transcribing audio with WhisperCPP..."
       log("Starting transcription for #{@audio_file}")
       
       # Check if audio file has content
@@ -226,62 +220,46 @@ module VoiceMemo
         return
       end
 
-      # Set environment variable to filter out FP16 warning
-      env = {
-        "PYTHONWARNINGS" => "ignore::UserWarning"
-      }
-
-      # Run whisper command
-      output, status = Open3.capture2e(
-        env,
-        "whisper",
-        @audio_file,
-        "--model", "base",
-        "--language", "en",
-        "--output_dir", @tmp_dir,
-        "--output_format", "txt"
-      )
-
-      log("Whisper exit status: #{status.exitstatus}")
-      log("Full Whisper Output:")
-      log(output)
-
-      if status.success?
-        # Extract transcription from whisper output
-        transcription = extract_transcription(output)
-
+      begin
+        # Initialize whisper context with the base model
+        whisper = Whisper::Context.new("base")
+        
+        # Set up parameters
+        params = Whisper::Params.new(
+          language: "en",
+          print_timestamps: false,
+          print_progress: true
+        )
+        
+        # Suppress log output from whisper.cpp
+        Whisper.log_set ->(level, buffer, user_data) {
+          # Only log errors
+          if level == Whisper::LOG_LEVEL_ERROR
+            log("WhisperCPP Error: #{buffer}")
+          end
+        }, nil
+        
+        # Transcribe the audio file
+        transcription = ""
+        whisper.transcribe(@audio_file, params) do |whole_text|
+          transcription = whole_text
+        end
+        
+        log("WhisperCPP transcription completed")
+        
         if transcription && !transcription.empty?
           File.write(@transcript_file, transcription)
         else
           puts "Warning: Could not extract transcription text"
-          File.write(@transcript_file, output)
-          puts "Full whisper output saved to #{@transcript_file} for debugging"
+          File.write(@transcript_file, "No speech detected. Please try recording again with clearer audio.")
         end
-      else
-        puts "Error: Whisper command failed with status #{status.exitstatus}"
+      rescue => e
+        puts "Error during transcription: #{e.message}"
+        log("Transcription error: #{e.message}")
+        log(e.backtrace.join("\n"))
+        File.write(@transcript_file, "Error during transcription: #{e.message}")
         exit 1
       end
-    end
-
-    def extract_transcription(output)
-      # Extract lines with timestamps and combine them
-      lines = output.lines.grep(/^\[.*-->.*\]/)
-
-      if lines.empty?
-        # Check if output only contains warnings or errors
-        if output.strip.match?(/^(Warning:|Error:|\/.*\.py|.*FP16.*)/)
-          log("No valid transcription found, only warnings/errors detected")
-          return "No speech detected. Please try recording again with clearer audio."
-        end
-        return nil
-      end
-
-      # Process each line to remove timestamps
-      text = lines.map do |line|
-        line.gsub(/\[.*-->.*\]/, '').strip
-      end.join(' ')
-
-      text.strip
     end
 
     def apply_tone(content, tone)
