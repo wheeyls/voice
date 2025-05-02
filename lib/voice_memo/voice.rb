@@ -234,6 +234,7 @@ module VoiceMemo
         "whisper",
         @audio_file,
         "--model", "base",
+        "--language", "en",
         "--output_dir", @tmp_dir,
         "--output_format", "txt"
       )
