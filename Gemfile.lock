@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    voice_memo (0.1.0)
+    voice_memo (0.1.1)
       json (~> 2.0)
       optparse (~> 0.1.1)
       ruby-openai (~> 7.0)
