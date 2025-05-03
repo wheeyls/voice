@@ -184,7 +184,8 @@ module VoiceMemo
 
       # Use specific format that OpenAI accepts: 16kHz sample rate, mono, 16-bit PCM WAV
       # This is important as OpenAI has specific format requirements
-      pid = spawn("rec -r 16000 -c 1 -b 16 -e signed-integer #{@audio_file} trim 0 silence 1 0.1 1% 2>> #{@log_file}")
+      # Explicitly set the encoding to signed-integer and file type to wav
+      pid = spawn("rec -r 16000 -c 1 -b 16 -e signed-integer -t wav #{@audio_file} trim 0 silence 1 0.1 1% 2>> #{@log_file}")
 
       log("Recording process started with PID: #{pid}")
 
@@ -301,21 +302,40 @@ module VoiceMemo
         puts 'Sending audio to OpenAI for transcription...'
         log("Sending request to OpenAI API with file: #{@audio_file}")
 
+        # Create a proper file object that the API can handle
+        # The API expects a file object with a content_type and original_filename
+        file_obj = {
+          name: "file",
+          data: audio_file.read,
+          filename: File.basename(@audio_file),
+          content_type: "audio/wav"
+        }
+        
+        # Reset file pointer after reading
+        audio_file.rewind
+
         # Add response_format parameter to ensure we get text back
         response = client.audio.transcribe(
           parameters: {
             model: "whisper-1",
-            file: audio_file,
+            file: file_obj,
             language: "en",
-            response_format: "json"
+            response_format: "text"
           }
         )
 
         log('OpenAI transcription completed')
         log("Response: #{response.inspect}")
 
-        # Extract the transcription text
-        transcription = response["text"]
+        # Extract the transcription text - response format depends on response_format parameter
+        if response.is_a?(String)
+          transcription = response
+        elsif response.is_a?(Hash) && response["text"]
+          transcription = response["text"]
+        else
+          transcription = nil
+          log("Unexpected response format: #{response.class}")
+        end
 
         if transcription && !transcription.empty?
           puts 'Transcription received successfully.'
@@ -331,11 +351,23 @@ module VoiceMemo
         log("Transcription error: #{e.message}")
         log(e.backtrace.join("\n"))
 
+        # Debug the audio file format
+        if File.exist?(@audio_file)
+          # Use file command to check the actual file format
+          file_type = `file "#{@audio_file}"`.strip
+          log("File type according to 'file' command: #{file_type}")
+          
+          # Check if sox can read the file
+          sox_check = `sox --i "#{@audio_file}" 2>&1`
+          log("Sox file info: #{sox_check}")
+        end
+
         # Provide more helpful error messages based on common issues
         error_message = case e.message
                         when /status 400/
                           "The API rejected the request. This could be due to an invalid audio format, " +
-                          "corrupted audio file, or unsupported audio codec. Try recording again."
+                          "corrupted audio file, or unsupported audio codec. Try recording again.\n\n" +
+                          "Debug info: File type: #{file_type rescue 'unknown'}"
                         when /status 401/
                           "Authentication error. Please check your OpenAI API key."
                         when /status 429/
