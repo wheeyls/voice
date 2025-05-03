@@ -271,6 +271,17 @@ module VoiceMemo
 
       file_size = File.size(@audio_file)
       log("Audio file size: #{file_size} bytes")
+      
+      # Debug the audio file format before attempting transcription
+      if File.exist?(@audio_file)
+        # Use file command to check the actual file format
+        file_type = `file "#{@audio_file}"`.strip
+        log("File type before transcription: #{file_type}")
+        
+        # Check if sox can read the file
+        sox_check = `sox --i "#{@audio_file}" 2>&1`
+        log("Sox file info before transcription: #{sox_check}")
+      end
 
       if file_size < 1000
         puts 'Warning: Audio file is too small. No speech was likely detected.'
@@ -303,23 +314,14 @@ module VoiceMemo
         puts 'Sending audio to OpenAI for transcription...'
         log("Sending request to OpenAI API with file: #{@audio_file}")
 
-        # Create a proper file object that the API can handle
-        # The API expects a file object with a content_type and original_filename
-        file_obj = {
-          name: "file",
-          data: audio_file.read,
-          filename: File.basename(@audio_file),
-          content_type: "audio/wav"
-        }
+        # The OpenAI API expects the file to be passed directly
+        # Don't create a custom hash - let the ruby-openai gem handle the file properly
         
-        # Reset file pointer after reading
-        audio_file.rewind
-
         # Add response_format parameter to ensure we get text back
         response = client.audio.transcribe(
           parameters: {
             model: "whisper-1",
-            file: file_obj,
+            file: audio_file,
             language: "en",
             response_format: "text"
           }
