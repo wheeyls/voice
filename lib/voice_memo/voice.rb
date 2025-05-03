@@ -43,7 +43,7 @@ module VoiceMemo
         content = File.read(@transcript_file)
 
         # Check if the content indicates an error
-        if content.start_with?('Error:')
+        if content.start_with?('Error:') || content.start_with?('The API rejected')
           puts "Transcription error occurred:"
           puts '-------------------------------'
           puts content
@@ -106,6 +106,7 @@ module VoiceMemo
         puts 'Transcription failed.'
         log("Transcription file not created: #{@transcript_file}")
         cleanup
+        return  # Exit the method immediately
       end
     end
 
@@ -381,7 +382,9 @@ module VoiceMemo
         puts error_message
         File.write(@transcript_file, error_message)
 
-        # Don't exit the program on error, just return
+        # Exit the program on transcription error
+        puts "Exiting due to transcription error."
+        cleanup
         return
       ensure
         # Make sure we close the file handle if it was opened
