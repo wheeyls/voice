@@ -29,19 +29,19 @@ module VoiceMemo
       check_dependencies
       ensure_directories
       record_audio
-      
+
       # Check if audio file was created successfully
       unless File.exist?(@audio_file) && File.size(@audio_file) > 1000
         puts "Error: Audio recording failed or file is too small."
         log("Audio recording failed or file is too small: #{@audio_file}")
         return
       end
-      
+
       transcribe_audio
 
       if File.exist?(@transcript_file)
         content = File.read(@transcript_file)
-        
+
         # Check if the content indicates an error
         if content.start_with?('Error:')
           puts "Transcription error occurred:"
@@ -185,7 +185,7 @@ module VoiceMemo
       # Use specific format that OpenAI accepts: 16kHz sample rate, mono, 16-bit PCM WAV
       # This is important as OpenAI has specific format requirements
       pid = spawn("rec -r 16000 -c 1 -b 16 -e signed-integer #{@audio_file} trim 0 silence 1 0.1 1% 2>> #{@log_file}")
-      
+
       log("Recording process started with PID: #{pid}")
 
       # Wait for Enter key
@@ -241,12 +241,12 @@ module VoiceMemo
       end
 
       puts 'Recording stopped.'
-      
+
       # Verify the audio file was created properly
       if File.exist?(@audio_file)
         file_size = File.size(@audio_file)
         log("Audio file created: #{@audio_file}, size: #{file_size} bytes")
-        
+
         if file_size < 1000
           log("Warning: Audio file is very small (#{file_size} bytes), may not contain speech")
         end
@@ -269,13 +269,13 @@ module VoiceMemo
 
       file_size = File.size(@audio_file)
       log("Audio file size: #{file_size} bytes")
-      
+
       if file_size < 1000
         puts 'Warning: Audio file is too small. No speech was likely detected.'
         File.write(@transcript_file, 'No speech detected. Please try recording again with clearer audio.')
         return
       end
-      
+
       # Check if file is too large (OpenAI has a 25MB limit)
       if file_size > 25 * 1024 * 1024
         puts 'Error: Audio file exceeds the 25MB size limit for OpenAI API.'
@@ -289,18 +289,18 @@ module VoiceMemo
         log("File exists: #{File.exist?(@audio_file)}")
         log("File size: #{File.size(@audio_file)} bytes")
         log("File readable: #{File.readable?(@audio_file)}")
-        
+
         # Initialize OpenAI client
         client = OpenAI::Client.new(access_token: ENV['OPENAI_API_KEY'])
-        
+
         # Verify the file can be opened
         audio_file = File.open(@audio_file, "rb")
         log("File opened successfully")
-        
+
         # Transcribe the audio file
         puts 'Sending audio to OpenAI for transcription...'
         log("Sending request to OpenAI API with file: #{@audio_file}")
-        
+
         # Add response_format parameter to ensure we get text back
         response = client.audio.transcribe(
           parameters: {
@@ -310,13 +310,13 @@ module VoiceMemo
             response_format: "json"
           }
         )
-        
+
         log('OpenAI transcription completed')
         log("Response: #{response.inspect}")
-        
+
         # Extract the transcription text
         transcription = response["text"]
-        
+
         if transcription && !transcription.empty?
           puts 'Transcription received successfully.'
           log("Transcription text: #{transcription[0..100]}...")
@@ -330,7 +330,7 @@ module VoiceMemo
         puts "Error during transcription: #{e.message}"
         log("Transcription error: #{e.message}")
         log(e.backtrace.join("\n"))
-        
+
         # Provide more helpful error messages based on common issues
         error_message = case e.message
                         when /status 400/
@@ -345,10 +345,10 @@ module VoiceMemo
                         else
                           "Error during transcription: #{e.message}"
                         end
-        
+
         puts error_message
         File.write(@transcript_file, error_message)
-        
+
         # Don't exit the program on error, just return
         return
       ensure
@@ -409,7 +409,7 @@ module VoiceMemo
       begin
         # Initialize OpenAI client
         client = OpenAI::Client.new(access_token: ENV['OPENAI_API_KEY'])
-        
+
         # Make the API request
         response = client.chat(
           parameters: {
@@ -418,16 +418,16 @@ module VoiceMemo
             temperature: 0.7
           }
         )
-        
+
         # Log the response
         log('API Response:')
         log(JSON.pretty_generate(response))
-        
+
         # Extract the formatted content
         if response['choices'] && response['choices'][0] && response['choices'][0]['message']
           return response['choices'][0]['message']['content']
         end
-        
+
         puts 'Error: Unexpected response structure from OpenAI API'
         log("Unexpected response structure: #{response.inspect}")
         nil
